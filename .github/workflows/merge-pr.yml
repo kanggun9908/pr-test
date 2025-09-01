@@ -194,10 +194,7 @@ jobs:
     name: Notify Slack (detailed)
     runs-on: ubuntu-latest
     needs: [analyze]
-    if: >
-      (github.event.action == 'review_requested' || github.event.action == 'ready_for_review' || github.event.action == 'labeled')
-      && needs.analyze.outputs.isLarge == 'true'
-      && github.event.pull_request.draft == false
+    if: always()
     steps:
       - name: Post to Slack (detailed + auto-mentions)
         uses: slackapi/slack-github-action@v2.0.0-rc.2
