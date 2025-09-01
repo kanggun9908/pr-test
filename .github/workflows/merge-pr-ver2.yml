@@ -1,0 +1,215 @@
+name: PR Review Noti
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, review_requested, synchronize, labeled]
+
+jobs:
+  analyze:
+    name: Analyze PR scope
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      isLarge:     ${{ steps.blocks.outputs.isLarge }}
+      severity:    ${{ steps.blocks.outputs.severity }}
+      reasons:     ${{ steps.blocks.outputs.reasons }}
+      files:       ${{ steps.gather.outputs.files }}
+      additions:   ${{ steps.gather.outputs.additions }}
+      deletions:   ${{ steps.gather.outputs.deletions }}
+      topdirs:     ${{ steps.gather.outputs.topdirs }}
+      reviewers:   ${{ steps.gather.outputs.reviewers }}
+      dbChanged:   ${{ steps.blocks.outputs.dbChanged }}
+      blocks:      ${{ steps.blocks.outputs.blocks }}
+      mentions:    ${{ steps.mentions.outputs.mentions }}
+    steps:
+      - name: Gather PR file stats
+        id: gather
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+
+            let page=1, per_page=100, files=[];
+            while(true){
+              const res = await github.rest.pulls.listFiles({ owner, repo, pull_number: pr.number, page, per_page });
+              files = files.concat(res.data);
+              if(res.data.length < per_page) break;
+              page++;
+            }
+
+            const additions = files.reduce((a,f)=>a+f.additions,0);
+            const deletions = files.reduce((a,f)=>a+f.deletions,0);
+            const filenames = files.map(f=>f.filename);
+
+            const topdirs = Object.entries(
+              filenames.reduce((acc, fn) => {
+                const d = fn.split('/')[0] || '(root)';
+                acc[d] = (acc[d] || 0) + 1; return acc;
+              }, {})
+            ).sort((a,b)=>b[1]-a[1]).slice(0,5)
+             .map(([d,c])=>`${d}(${c})`).join(', ');
+
+            const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
+                              .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
+                              .join(',');
+
+            core.setOutput('files', String(files.length));
+            core.setOutput('additions', String(additions));
+            core.setOutput('deletions', String(deletions));
+            core.setOutput('topdirs', topdirs || '(none)');
+            core.setOutput('reviewers', reviewers || 'n/a');
+
+      - name: Build Slack blocks + evaluate scope + detect DB change
+        id: blocks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const base = pr.base.ref;
+            const head = pr.head.ref;
+
+            const files     = Number('${{ steps.gather.outputs.files }}');
+            const additions = Number('${{ steps.gather.outputs.additions }}');
+            const deletions = Number('${{ steps.gather.outputs.deletions }}');
+            const topdirs   = '${{ steps.gather.outputs.topdirs }}';
+            const reviewers = '${{ steps.gather.outputs.reviewers }}';
+
+            let page=1, per_page=100, allFiles=[];
+            while(true){
+              const res = await github.rest.pulls.listFiles({ owner, repo, pull_number: pr.number, page, per_page });
+              allFiles = allFiles.concat(res.data);
+              if(res.data.length < per_page) break;
+              page++;
+            }
+            const filenames = allFiles.map(f=>f.filename);
+
+            const BIG_FILES = files > 25;
+            const BIG_LINES = additions > 800;
+            const TOUCH_CORE = filenames.some(fn =>
+              fn.startsWith('src/') ||
+              fn.startsWith('apps/') ||
+              fn.startsWith('db/migration') ||
+              fn.includes('Dockerfile') ||
+              fn.startsWith('.github/workflows')
+            );
+            const HAS_LABEL = (pr.labels || []).some(l =>
+              ['needs-review','risk:high','breaking'].includes(l.name)
+            );
+            const isLarge = true;  // 테스트용 무조건 true
+            const severity = 'HIGH'; // 테스트용 무조건 HIGH
+            const dbChanged = true;  // 테스트용 무조건 DB 변경
+
+            const reasons = [
+              BIG_FILES ? `변경 파일 ${files}건` : null,
+              BIG_LINES ? `추가 라인 ${additions} (삭제 ${deletions})` : null,
+              TOUCH_CORE ? `핵심 디렉토리 영향(src/, apps/, db/migration, Dockerfile, workflows)` : null,
+              HAS_LABEL ? `라벨(needs-review/risk:high/breaking)` : null,
+              dbChanged ? `DB 변경 의심(sql 또는 src/entities/*)` : null,
+            ].filter(Boolean).join(', ');
+
+            const header = [
+              `*#${pr.number}*  ${pr.title}`,
+              `*${base}* ← *${head}*  by \`${pr.user.login}\``,
+              `<${pr.html_url}|PR 링크>`
+            ].join('\n');
+
+            const fields = [
+              { type: 'mrkdwn', text: `*변경 파일*\n${files}` },
+              { type: 'mrkdwn', text: `*추가/삭제*\n+${additions} / -${deletions}` },
+              { type: 'mrkdwn', text: `*Top 디렉토리*\n${topdirs}` },
+              { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${reviewers}` },
+            ];
+            fields.push({ type: 'mrkdwn', text: `*DB 변경 감지*\n:warning: \`sql\`, \`src/entities/\`` });
+
+            const blocks = [
+              { type: 'section', text: { type: 'mrkdwn', text: header } },
+              { type: 'context', elements: [{ type: 'mrkdwn', text: `범위판단: *${severity}*  •  사유: ${reasons || 'n/a'}` }] },
+              { type: 'section', fields }
+            ];
+
+            core.setOutput('blocks', JSON.stringify(blocks));
+            core.setOutput('isLarge', String(isLarge));
+            core.setOutput('severity', severity);
+            core.setOutput('reasons', reasons || 'n/a');
+            core.setOutput('dbChanged', String(dbChanged));
+
+      - name: Prepare mentions
+        id: mentions
+        shell: bash
+        run: |
+          M1="${{ secrets.SLACK_MENTION_1 }}"
+          M2="${{ secrets.SLACK_MENTION_2 }}"
+          M3="${{ secrets.SLACK_MENTION_3 }}"
+          echo "mentions=${M1} ${M2} ${M3}" >> $GITHUB_OUTPUT
+
+  notify:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [analyze]
+    steps:
+      - name: Post to Slack
+        uses: slackapi/slack-github-action@v2.0.0-rc.2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}  ${{ needs.analyze.outputs.mentions }}"
+            blocks: ${{ needs.analyze.outputs.blocks }}
+
+  comment-and-label:
+    name: Comment on HIGH PR + Auto label
+    runs-on: ubuntu-latest
+    needs: analyze
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Ensure label "needs-review"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const targetLabel = 'needs-review';
+            const existing = pr.labels?.map(l => l.name) || [];
+            if (!existing.includes(targetLabel)) {
+              await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, labels: [targetLabel] });
+            }
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const MARKER = '<!-- large-pr-comment -->';
+            const comments = await github.paginate(github.rest.issues.listComments, { owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
+            if (comments.some(c => (c.body || '').includes(MARKER))) return;
+
+            const dbLine = '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **DB 변경 가능**\n';
+            const body = `
+${MARKER}
+
+### 📌 파일이 큽니다. 코드리뷰 하실?
+- PR: #${pr.number} — **${pr.title}**
+- 범위 판단: **HIGH**
+- 사유: 테스트용
+
+**변경 요약**
+- 변경 파일: 30개
+- 라인 변화: +1000 / -50
+- 링크: ${pr.html_url}
+${dbLine}
+**리뷰 체크리스트**
+- [ ] 핵심 경로/마이그레이션 확인
+- [ ] 대용량 diff 검토
+- [ ] 주요 사이드이펙트 점검
+- [ ] 코딩 컨벤션/테스트/로그 점검
+
+👉 **이 코멘트에 이모지 달아주시면 리뷰 우선 시작합니다.**
+`;
+
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
