@@ -78,7 +78,6 @@ jobs:
         run: |
           # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
           MENTIONS="${{ secrets.CODE_OWNERS }}"
-          echo "Mentions: $MENTIONS"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
