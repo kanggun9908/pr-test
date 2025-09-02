@@ -184,7 +184,7 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}  ${{ needs.analyze.outputs.mentions }}"
+            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}  ${{ secrets.CODE_OWNERS }}"
             blocks: ${{ needs.analyze.outputs.blocks }}
   comment-and-label:
     name: Comment on PR (HIGH) + Auto label
