@@ -109,7 +109,7 @@ jobs:
             const additions = Number('${{ steps.gather.outputs.additions }}');
             const deletions = Number('${{ steps.gather.outputs.deletions }}');
             const topdirs   = '${{ steps.gather.outputs.topdirs }}';
-            const reviewers = '${{ steps.gather.outputs.reviewers }}';
+
             const reviewers = '${{ secrets.CODE_OWNERS }}';
             // 파일 목록 재조회(경로 기반 판정용)
             let page=1, per_page=100, allFiles=[];
