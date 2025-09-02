@@ -155,7 +155,7 @@ jobs:
             }
             const blocks = [
               { type: 'section', text: { type: 'mrkdwn', text: header } },
-              { type: 'context', elements: [{ type: 'mrkdwn', text: `범위판단: *${severity}*  •  사유: ${reasons || 'n/a'}` }] },
+              { type: 'context', elements: [{ type: 'mrkdwn', text: `범위판단: *${severity}*  \n•  사유: ${reasons || 'n/a'}` }] },
               { type: 'section', fields }
             ];
             core.setOutput('blocks', JSON.stringify(blocks));
