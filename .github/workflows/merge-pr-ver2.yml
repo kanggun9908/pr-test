@@ -169,8 +169,8 @@ jobs:
         run: |
           # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
           MENTIONS="${{ secrets.CODE_OWNERS }}"
-          echo "Mentions: ${{ needs.analyze.outputs.mentions }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
+          echo "Mentions: ${{ needs.analyze.outputs.mentions }}"
   notify:
     name: Notify Slack (detailed)
     runs-on: ubuntu-latest
