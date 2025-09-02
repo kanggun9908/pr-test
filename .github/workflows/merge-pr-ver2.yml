@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
-          MENTIONS="${{ secrets.CODE_OWNERS }}"
+          MENTIONS="${{ vars.CODE_OWNERS_VAR }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
@@ -191,7 +191,7 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}"
+            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }} ${{ needs.analyze.outputs.mentions }}"
             blocks: ${{ needs.analyze.outputs.blocks }}
   comment-and-label:
     name: Comment on PR (HIGH) + Auto label
