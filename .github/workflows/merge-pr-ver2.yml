@@ -73,6 +73,7 @@ jobs:
             const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
                               .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
                               .join(',');
+            console.log(reviewers);
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
