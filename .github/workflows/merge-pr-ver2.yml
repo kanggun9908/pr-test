@@ -162,7 +162,7 @@ jobs:
               { type: 'mrkdwn', text: `*변경 파일*\n${files}` },
               { type: 'mrkdwn', text: `*추가/삭제*\n+${additions} / -${deletions}` },
               { type: 'mrkdwn', text: `*Top 디렉토리*\n${topdirs}` },
-              { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${reviewers}` },
+              { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${{ secrets.CODE_OWNERS }}` },
             ];
             if (dbChanged) {
               fields.push({ type: 'mrkdwn', text: `*DB 변경 감지*\n:warning: \`sql\`, \`src/entities/\`` });
