@@ -67,7 +67,7 @@ jobs:
             const { data: prDetail } = await github.rest.pulls.get({
                 owner,
                 repo,
-                pull_number: prNumber
+                pull_number: context.payload.pull_request.number
               });
 
             const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
