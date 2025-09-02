@@ -70,11 +70,6 @@ jobs:
                 pull_number: prNumber
               });
 
-            const reviewers = (prDetail.requested_reviewers || []).map(u => `@${u.login}`)
-                                .concat((prDetail.requested_teams || []).map(t => `team:${t.slug}`))
-                                .join(' ');
-
-            core.setOutput('reviewers', reviewers || 'n/a');
             const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
                               .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
                               .join(',');
