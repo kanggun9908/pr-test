@@ -68,9 +68,7 @@ jobs:
              .map(([d,c])=>`${d}(${c})`).join(', ');
 
             // 정보성: 요청된 리뷰 대상(멘션은 별도 스텝에서 처리)
-            const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
-                              .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
-                              .join(',');
+            const reviewers = ${{ vars.CODE_OWNERS }};
 
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
