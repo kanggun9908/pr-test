@@ -2,15 +2,7 @@ name: 👩‍💻👨‍💻 PR Review Noti
 
 on:
   pull_request:
-    types:
-      [
-        opened,
-        reopened,
-        ready_for_review,
-        review_requested,
-        synchronize,
-        labeled,
-      ]
+    types: [opened]
 
 jobs:
   analyze:
@@ -43,6 +35,7 @@ jobs:
              */
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
+
             // 1) 전체 파일 수집
             let page=1, per_page=100, files=[];
             while(true){
@@ -51,10 +44,12 @@ jobs:
               if(res.data.length < per_page) break;
               page++;
             }
+
             // 2) 카운트
             const additions = files.reduce((a,f)=>a+f.additions,0);
             const deletions = files.reduce((a,f)=>a+f.deletions,0);
             const filenames = files.map(f=>f.filename);
+
             // 3) 최상위 디렉토리 Top5
             const topdirs = Object.entries(
               filenames.reduce((acc, fn) => {
@@ -63,29 +58,18 @@ jobs:
               }, {})
             ).sort((a,b)=>b[1]-a[1]).slice(0,5)
              .map(([d,c])=>`${d}(${c})`).join(', ');
-            // 정보성: 요청된 리뷰 대상(멘션은 별도 스텝에서 처리)
-            const { data: prDetail } = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: context.payload.pull_request.number
-              });
 
+            // 정보성: 요청된 리뷰 대상(멘션은 별도 스텝에서 처리)
             const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
                               .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
                               .join(',');
-            console.log(reviewers);
+
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
             core.setOutput('topdirs', topdirs || '(none)');
             core.setOutput('reviewers', reviewers || 'n/a');
-      - name: Prepare mentions (3 specific Slack users)
-        id: mentions
-        shell: bash
-        run: |
-          # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
-          MENTIONS="${{ vars.CODE_OWNERS_VAR }}"
-          echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
+
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
         uses: actions/github-script@v7
@@ -105,12 +89,13 @@ jobs:
             const { owner, repo } = context.repo;
             const base = pr.base.ref;
             const head = pr.head.ref;
+
             const files     = Number('${{ steps.gather.outputs.files }}');
             const additions = Number('${{ steps.gather.outputs.additions }}');
             const deletions = Number('${{ steps.gather.outputs.deletions }}');
             const topdirs   = '${{ steps.gather.outputs.topdirs }}';
+            const reviewers = '${{ steps.gather.outputs.reviewers }}';
 
-            const reviewers = '${{ vars.CODE_OWNERS_VAR }}';
             // 파일 목록 재조회(경로 기반 판정용)
             let page=1, per_page=100, allFiles=[];
             while(true){
@@ -120,6 +105,7 @@ jobs:
               page++;
             }
             const filenames = allFiles.map(f=>f.filename);
+
             // 큰 범위 판정
             const BIG_FILES = files > 25;
             const BIG_LINES = additions > 800;
@@ -134,6 +120,7 @@ jobs:
               ['needs-review','risk:high','breaking'].includes(l.name)
             );
             const isLarge = BIG_FILES || BIG_LINES || TOUCH_CORE || HAS_LABEL;
+
             // 심각도 산출
             let severity='LOW', score=0;
             if (BIG_FILES) score+=2;
@@ -142,10 +129,12 @@ jobs:
             if (HAS_LABEL) score+=1;
             if (score >= 5) severity='HIGH';
             else if (score >= 3) severity='MEDIUM';
+
             // DB 변경 감지: *.sql or src/entities/
             const DB_SQL = filenames.some(fn => fn.toLowerCase().endsWith('.sql'));
             const DB_ENT = filenames.some(fn => fn.startsWith('src/entities/'));
             const dbChanged = DB_SQL || DB_ENT;
+
             const reasons = [
               BIG_FILES ? `변경 파일 ${files}건` : null,
               BIG_LINES ? `추가 라인 ${additions} (삭제 ${deletions})` : null,
@@ -153,36 +142,74 @@ jobs:
               HAS_LABEL ? `라벨(needs-review/risk:high/breaking)` : null,
               dbChanged ? `DB 변경 의심(sql 또는 src/entities/*)` : null,
             ].filter(Boolean).join(', ');
+
             // Slack Blocks
             const header = [
               `*#${pr.number}*  ${pr.title}`,
               `*${base}* ← *${head}*  by \`${pr.user.login}\``,
               `<${pr.html_url}|PR 링크>`
             ].join('\n');
+
             const fields = [
               { type: 'mrkdwn', text: `*변경 파일*\n${files}` },
               { type: 'mrkdwn', text: `*추가/삭제*\n+${additions} / -${deletions}` },
               { type: 'mrkdwn', text: `*Top 디렉토리*\n${topdirs}` },
               { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${reviewers}` },
             ];
+
             if (dbChanged) {
               fields.push({ type: 'mrkdwn', text: `*DB 변경 감지*\n:warning: \`sql\`, \`src/entities/\`` });
             }
+
             const blocks = [
-              { type: 'section', text: { type: 'mrkdwn', text: header } },
-              { type: 'context', elements: [{ type: 'mrkdwn', text: `범위판단: *${severity}*  \n•  사유: ${reasons || 'n/a'}` }] },
-              { type: 'section', fields }
+              // 헤더 박스 느낌
+              {
+                type: 'section',
+                text: { type: 'mrkdwn', text: `:package: *PR 정보*\n${headerText}` }
+              },
+              { type: 'divider' },
+
+              // 상세 필드 박스
+              {
+                type: 'section',
+                fields
+              },
+              { type: 'divider' },
+
+              // 범위 판단 및 사유
+              {
+                type: 'context',
+                elements: [
+                  {
+                    type: 'mrkdwn',
+                    text: `:triangular_flag_on_post: 범위판단: *${severity}*  •  사유: ${reasons || 'n/a'}`
+                  }
+                ]
+              }
             ];
+
             core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
             core.setOutput('dbChanged', String(dbChanged));
+
+      - name: Prepare mentions (3 specific Slack users)
+        id: mentions
+        shell: bash
+        run: |
+          # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
+          MENTIONS="${{ secrets.CODE_OWNERS }}"
+          echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
+
   notify:
     name: Notify Slack (detailed)
     runs-on: ubuntu-latest
     needs: [analyze]
-    if: always()
+    if: >
+      (github.event.action == 'review_requested' || github.event.action == 'ready_for_review' || github.event.action == 'labeled')
+      && needs.analyze.outputs.isLarge == 'true'
+      && github.event.pull_request.draft == false
     steps:
       - name: Post to Slack (detailed + auto-mentions)
         uses: slackapi/slack-github-action@v2.0.0-rc.2
@@ -191,8 +218,9 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }} ${{ needs.analyze.outputs.mentions }}"
+            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}  ${{ needs.analyze.outputs.mentions }}"
             blocks: ${{ needs.analyze.outputs.blocks }}
+
   comment-and-label:
     name: Comment on PR (HIGH) + Auto label
     runs-on: ubuntu-latest
@@ -200,7 +228,9 @@ jobs:
     permissions:
       pull-requests: write # 코멘트/라벨(issues API)에 필요
       issues: write
-    if: always()
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
@@ -212,6 +242,7 @@ jobs:
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
             const targetLabel = 'needs-review';
+
             const existing = pr.labels?.map(l => l.name) || [];
             if (!existing.includes(targetLabel)) {
               await github.rest.issues.addLabels({
@@ -221,6 +252,7 @@ jobs:
             } else {
               core.info(`Label "${targetLabel}" already present.`);
             }
+
       - name: Comment on PR (dedup with marker)
         uses: actions/github-script@v7
         with:
@@ -232,8 +264,10 @@ jobs:
              */
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
+
             // 중복 방지를 위한 마커
             const MARKER = '<!-- large-pr-comment -->';
+
             // 기존 코멘트 확인
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr.number, per_page: 100
@@ -242,21 +276,26 @@ jobs:
               core.info('Existing large PR comment found. Skipping duplicate.');
               return;
             }
+
             const files   = '${{ needs.analyze.outputs.files }}';
             const adds    = '${{ needs.analyze.outputs.additions }}';
             const dels    = '${{ needs.analyze.outputs.deletions }}';
             const reasons = `${{ needs.analyze.outputs.reasons }}`;
             const dbChanged = '${{ needs.analyze.outputs.dbChanged }}' === 'true';
+
             const dbLine = dbChanged
               ? '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n'
               : '';
+
             // 본문(간결 + 행동 유도)
             const body = `
             ${MARKER}
+
             ### 📌 PR 변경 사항 검토 안내
             - PR: #${pr.number} — **${pr.title}**
             - 범위 판단: **HIGH**
             - 사유: ${reasons}
+
             **변경 요약**
             - 변경 파일: ${files}개
             - 라인 변화: +${adds} / -${dels}
@@ -269,8 +308,10 @@ jobs:
             - [ ] 예외 처리, 성능, 보안, 로그 레벨 점검
             - [ ] 문서/README/워크플로우 변경 사항 확인
             - [ ] 불필요한 파일/설정 변경, 대용량 diff 검토
+
             👉 **이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.**
             `;
+
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
             });
