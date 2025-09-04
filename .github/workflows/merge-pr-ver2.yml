@@ -190,7 +190,7 @@ jobs:
                 elements: [
                   {
                     type: 'mrkdwn',
-                    text: `:triangular_flag_on_post: 범위판단: *${severity}*  •  사유: ${reasons || 'n/a'}`
+                    text: `:triangular_flag_on_post: 범위판단: *${severity}*  \n•  사유: ${reasons || 'n/a'}`
                   }
                 ]
               }
@@ -207,7 +207,7 @@ jobs:
         shell: bash
         run: |
           # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
-          MENTIONS="${{ secrets.CODE_OWNERS }}"
+          MENTIONS="${{ vars.CODE_OWNERS }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
 
   notify:
