@@ -173,7 +173,7 @@ jobs:
               // 헤더 박스 느낌
               {
                 type: 'section',
-                text: { type: 'mrkdwn', text: `:package: *PR 정보*\n${headerText}` }
+                text: { type: 'mrkdwn', text: `:package: *PR 정보*\n${header}` }
               },
               { type: 'divider' },
 
