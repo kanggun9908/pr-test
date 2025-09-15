@@ -165,7 +165,7 @@ jobs:
         id: mentions
         shell: bash
         run: |
-          MENTIONS="${{ secrets.CODE_OWNERS_VAR }}"
+          MENTIONS="${{ vars.CODE_OWNERS_VAR }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
 
   send-coderabbit-summary:
