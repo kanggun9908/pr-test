@@ -177,7 +177,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 30
+        run: sleep 10
       - name: "Find CodeRabbit summary comment"
         id: find_comment
         uses: actions/github-script@v7
