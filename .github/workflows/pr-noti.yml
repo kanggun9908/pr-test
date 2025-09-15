@@ -258,7 +258,6 @@ jobs:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID }}"
           payload: |
             {
-              channel: ${{ secrets.SLACK_CHANNEL_ID }}
               "text": "${{ steps.generate_payload.outputs.final_text_fallback }}",
               "blocks": ${{ steps.generate_payload.outputs.final_blocks_json }}
             }
