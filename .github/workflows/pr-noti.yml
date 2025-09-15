@@ -54,9 +54,7 @@ jobs:
               }, {})
             ).sort((a,b)=>b[1]-a[1]).slice(0,5)
              .map(([d,c])=>`${d}(${c})`).join(', ');
-            const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
-                              .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
-                              .join(',');
+            const reviewers = process.env.MENTIONS;
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
