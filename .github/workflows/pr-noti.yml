@@ -9,9 +9,14 @@ on:
       - review_requested
       - synchronize
       - labeled
+    branches:
+      - "dev"
+      - "release"
+      - "main"
 
 jobs:
   analyze:
+    if: github.base_ref == 'dev' || ((github.base_ref == 'release' || github.base_ref == 'main') && startsWith((github.head_ref), 'hotfix/'))
     name: Analyze PR scope
     runs-on: ubuntu-latest
     permissions:
@@ -88,7 +93,7 @@ jobs:
             const BIG_FILES = files > 25;
             const BIG_LINES = additions > 800;
             const TOUCH_CORE = filenames.some(fn =>
-              fn.startsWith('src/') || fn.startsWith('apps/') || fn.startsWith('db/migration') ||
+              (fn.startsWith('src/') && !fn.substring(4).includes('/')) || fn.toLowerCase().endsWith('.sql') ||
               fn.includes('Dockerfile') || fn.startsWith('.github/workflows')
             );
             const HAS_LABEL = (pr.labels || []).some(l => ['needs-review','risk:high','breaking'].includes(l.name));
@@ -177,7 +182,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 10 # 대기 시간은 그대로 둡니다.
+        run: sleep 120 # 대기 시간은 그대로 둡니다.
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
