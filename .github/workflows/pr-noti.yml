@@ -110,7 +110,6 @@ jobs:
               HAS_LABEL ? `주요 라벨 포함` : null,
             ].filter(Boolean).join(', ');
 
-            // [개선] 위험도에 따라 이모지 추가
             const severityEmoji = { HIGH: '🚨', MEDIUM: '⚠️', LOW: '⚪️' }[severity];
 
             const header = {
@@ -130,7 +129,7 @@ jobs:
               }
             };
 
-            const context = {
+            const contextBlock = {
               "type": "context",
               "elements": [
                 {
@@ -142,18 +141,19 @@ jobs:
 
             const fields = [
               { "type": "mrkdwn", "text": `*변경 파일*\n${files}개` },
-              { "type": "mrkdwn", "text": `*추가/삭제 라인*\n+${additions} / -${deletions}` },
+              { "type": "mrkdwn", "text": `*추가/삭제*\n+${additions} / -${deletions}` },
               { "type": "mrkdwn", "text": `*Top 디렉토리*\n${topdirs}` },
               { "type": "mrkdwn", "text": `*요청 리뷰어*\n${reviewers || 'n/a'}` }
             ];
+
             if (dbChanged) {
-              fields.push({ "type": "mrkdwn", "text": `*DB 변경*\n⚠️ 감지됨` });
+              fields.push({ "type": "mrkdwn", "text": `*DB 변경*\n:warning: 감지됨` });
             }
 
             const mainContent = { "type": "section", "fields": fields };
             const divider = { "type": "divider" };
 
-            const blocks = [header, prInfo, context, divider, mainContent];
+            const blocks = [header, prInfo, contextBlock, divider, mainContent];
 
             core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
@@ -221,9 +221,8 @@ jobs:
             const mentions = process.env.MENTIONS;
             const severity = process.env.SEVERITY;
 
-            // 맨 앞에 멘션 추가
             if (mentions) {
-              existingBlocks.unshift({
+              existingBlocks.splice(1, 0, {
                 "type": "context",
                 "elements": [{ "type": "mrkdwn", "text": `*담당자:* ${mentions}` }]
               });
@@ -250,3 +249,83 @@ jobs:
               "text": "${{ steps.generate_payload.outputs.final_text_fallback }}",
               "blocks": ${{ steps.generate_payload.outputs.final_blocks_json }}
             }
+
+  comment-and-label:
+    name: Comment on PR (HIGH) + Auto label
+    runs-on: ubuntu-latest
+    needs: [analyze]
+    permissions:
+      pull-requests: write
+      issues: write
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
+    steps:
+      - name: Ensure label "needs-review" exists on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const targetLabel = 'needs-review';
+            const existing = pr.labels?.map(l => l.name) || [];
+            if (!existing.includes(targetLabel)) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number, labels: [targetLabel]
+              });
+              core.info(`Label "${targetLabel}" added.`);
+            } else {
+              core.info(`Label "${targetLabel}" already present.`);
+            }
+
+      - name: Comment on PR (dedup with marker)
+        uses: actions/github-script@v7
+        env:
+          files: ${{ needs.analyze.outputs.files }}
+          adds: ${{ needs.analyze.outputs.additions }}
+          dels: ${{ needs.analyze.outputs.deletions }}
+          reasons: ${{ needs.analyze.outputs.reasons }}
+          dbChanged: ${{ needs.analyze.outputs.dbChanged }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const MARKER = '';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100
+            });
+            if (comments.some(c => (c.body || '').includes(MARKER))) {
+              core.info('Existing large PR comment found. Skipping duplicate.');
+              return;
+            }
+            const files = process.env.files;
+            const adds = process.env.adds;
+            const dels = process.env.dels;
+            const reasons = process.env.reasons;
+            const dbChanged = process.env.dbChanged === 'true';
+            const dbLine = dbChanged
+              ? '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n'
+              : '';
+            const body = `
+            ${MARKER}
+            ### 📌 PR 변경 사항 검토 안내
+            - PR: #${pr.number} — **${pr.title}**
+            - 범위 판단: **HIGH**
+            - 사유: ${reasons}
+            **변경 요약**
+            - 변경 파일: ${files}개
+            - 라인 변화: +${adds} / -${dels}
+            - 링크: ${pr.html_url}
+            ${dbLine}
+            **리뷰 체크리스트 (가이드)**
+            - [ ] 핵심 비즈니스 로직 및 기능 변경 사항 검토
+            - [ ] DB/마이그레이션 영향 점검 (롤백 가능성 포함)
+            - [ ] 신규 의존성, 라이브러리, 환경 설정 변경 확인
+            - [ ] 예외 처리, 성능, 보안, 로그 레벨 점검
+            - [ ] 문서/README/워크플로우 변경 사항 확인
+            - [ ] 불필요한 파일/설정 변경, 대용량 diff 검토
+            👉 **이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.**
+            `;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: pr.number, body
+            });
