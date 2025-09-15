@@ -253,10 +253,11 @@ jobs:
       - name: Post to Slack
         uses: slackapi/slack-github-action@v1.25.0
         with:
-          channel-id: "${{ secrets.SLACK_CHANNEL_ID }}"
-          bot-token: "${{ secrets.SLACK_BOT_TOKEN }}"
+          method: chat.postMessage
+          token: "${{ secrets.SLACK_BOT_TOKEN }}"
           payload: |
             {
+              channel: ${{ secrets.SLACK_CHANNEL_ID }}
               "text": "${{ steps.generate_payload.outputs.final_text_fallback }}",
               "blocks": ${{ steps.generate_payload.outputs.final_blocks_json }}
             }
