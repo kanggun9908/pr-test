@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 120
+        run: sleep 50
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
