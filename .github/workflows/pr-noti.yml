@@ -2,6 +2,7 @@ name: 👩‍💻👨‍💻 PR Review Noti
 
 on:
   pull_request:
+    # PR이 열리거나, 다시 열리거나, 리뷰 준비 완료, 리뷰 요청, 동기화(푸시), 라벨 추가 시 트리거
     types:
       [
         opened,
@@ -20,16 +21,17 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      isLarge: ${{ steps.blocks.outputs.isLarge }}
-      severity: ${{ steps.blocks.outputs.severity }}
-      reasons: ${{ steps.blocks.outputs.reasons }}
+      isLarge: ${{ steps.evaluate.outputs.isLarge }}
+      severity: ${{ steps.evaluate.outputs.severity }}
+      reasons: ${{ steps.evaluate.outputs.reasons }}
       files: ${{ steps.gather.outputs.files }}
       additions: ${{ steps.gather.outputs.additions }}
       deletions: ${{ steps.gather.outputs.deletions }}
       topdirs: ${{ steps.gather.outputs.topdirs }}
       reviewers: ${{ steps.gather.outputs.reviewers }}
-      dbChanged: ${{ steps.blocks.outputs.dbChanged }}
-      blocks: ${{ steps.blocks.outputs.blocks }}
+      dbChanged: ${{ steps.evaluate.outputs.dbChanged }}
+      dbChangedText: ${{ steps.evaluate.outputs.dbChangedText }} # 👍 이 값 사용
+      initialBlocks: ${{ steps.evaluate.outputs.initialBlocks }} # 👍 PR 정보 블록 JSON
       mentions: ${{ steps.mentions.outputs.mentions }}
     steps:
       - name: Gather PR file stats
@@ -40,7 +42,7 @@ jobs:
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
 
-            let page=1, per_page=100, files=[];
+            let files = [], page = 1, per_page = 100;
             while(true){
               const res = await github.rest.pulls.listFiles({ owner, repo, pull_number: pr.number, page, per_page });
               files = files.concat(res.data);
@@ -69,90 +71,80 @@ jobs:
             core.setOutput('deletions', String(deletions));
             core.setOutput('topdirs', topdirs || '(none)');
             core.setOutput('reviewers', reviewers || 'n/a');
+            core.setOutput('filenames', JSON.stringify(filenames)); # 파일명 목록을 JSON 문자열로 저장
 
-      - name: Build Slack blocks + evaluate scope + detect DB change
-        id: blocks
+      - name: Evaluate scope and build initial Slack Blocks
+        id: evaluate # 스텝 이름 변경
         uses: actions/github-script@v7
         with:
           script: |
             const pr = context.payload.pull_request;
-            const { owner, repo } = context.repo;
-            const base = pr.base.ref;
-            const head = pr.head.ref;
-
+            const filenames = JSON.parse('${{ steps.gather.outputs.filenames }}'); # 파일명 목록 재사용
             const files     = Number('${{ steps.gather.outputs.files }}');
             const additions = Number('${{ steps.gather.outputs.additions }}');
             const deletions = Number('${{ steps.gather.outputs.deletions }}');
             const topdirs   = '${{ steps.gather.outputs.topdirs }}';
             const reviewers = '${{ steps.gather.outputs.reviewers }}';
+            const base = pr.base.ref;
+            const head = pr.head.ref;
 
-            let page=1, per_page=100, allFiles=[];
-            while(true){
-              const res = await github.rest.pulls.listFiles({ owner, repo, pull_number: pr.number, page, per_page });
-              allFiles = allFiles.concat(res.data);
-              if(res.data.length < per_page) break;
-              page++;
-            }
-            const filenames = allFiles.map(f=>f.filename);
-
+            // 큰 범위 판정
             const BIG_FILES = files > 25;
             const BIG_LINES = additions > 800;
             const TOUCH_CORE = filenames.some(fn =>
-              fn.startsWith('src/') ||
-              fn.startsWith('apps/') ||
-              fn.startsWith('db/migration') ||
-              fn.includes('Dockerfile') ||
-              fn.startsWith('.github/workflows')
+              fn.startsWith('src/') || fn.startsWith('apps/') || fn.startsWith('db/migration') ||
+              fn.includes('Dockerfile') || fn.startsWith('.github/workflows')
             );
             const HAS_LABEL = (pr.labels || []).some(l =>
               ['needs-review','risk:high','breaking'].includes(l.name)
             );
             const isLarge = BIG_FILES || BIG_LINES || TOUCH_CORE || HAS_LABEL;
 
+            // 심각도 산출
             let severity='LOW', score=0;
-            if (BIG_FILES) score+=2;
-            if (BIG_LINES) score+=2;
-            if (TOUCH_CORE) score+=2;
-            if (HAS_LABEL) score+=1;
-            if (score >= 5) severity='HIGH';
-            else if (score >= 3) severity='MEDIUM';
+            if (BIG_FILES) score+=2; if (BIG_LINES) score+=2;
+            if (TOUCH_CORE) score+=2; if (HAS_LABEL) score+=1;
+            if (score >= 5) severity='HIGH'; else if (score >= 3) severity='MEDIUM';
 
-            const DB_SQL = filenames.some(fn => fn.toLowerCase().endsWith('.sql'));
-            const DB_ENT = filenames.some(fn => fn.startsWith('src/entities/'));
-            const dbChanged = DB_SQL || DB_ENT;
+            // DB 변경 감지
+            const dbChanged = filenames.some(fn => fn.toLowerCase().endsWith('.sql') || fn.startsWith('src/entities/'));
+            const dbChangedText = dbChanged ? '⚠️ 있음' : '없음';
 
             const reasons = [
               BIG_FILES ? `변경 파일 ${files}건` : null,
               BIG_LINES ? `추가 라인 ${additions} (삭제 ${deletions})` : null,
-              TOUCH_CORE ? `핵심 디렉토리 영향(src/, apps/, db/migration, Dockerfile, workflows)` : null,
-              HAS_LABEL ? `라벨(needs-review/risk:high/breaking)` : null,
-              dbChanged ? `DB 변경 의심(sql 또는 src/entities/*)` : null,
+              TOUCH_CORE ? `핵심 디렉토리 영향` : null,
+              HAS_LABEL ? `라벨 존재` : null,
+              dbChanged ? `DB 변경 의심` : null,
             ].filter(Boolean).join(', ');
 
-            // Slack Blocks 구성 - PR 상세 정보
-            const headerText = `*#${pr.number}* ${pr.title}\n*${base}* ← *${head}* by \`${pr.user.login}\`\n<${pr.html_url}|PR 링크>`;
-
-            const fields = [
-              { type: 'mrkdwn', text: `*변경 파일*\n${files}` },
-              { type: 'mrkdwn', text: `*추가/삭제*\n+${additions} / -${deletions}` },
-              { type: 'mrkdwn', text: `*Top 디렉토리*\n${topdirs}` },
-              { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${reviewers}` },
-            ];
-            if (dbChanged) {
-              fields.push({ type: 'mrkdwn', text: `*DB 변경 감지*\n:warning: \`sql\`, \`src/entities/\`` });
-            }
-
+            // 초기 Slack Blocks (PR 기본 정보)
             const initialBlocks = [
-              { type: 'section', text: { type: 'mrkdwn', text: headerText } },
-              { type: 'context', elements: [{ type: 'mrkdwn', text: `범위판단: *${severity}* •  사유: ${reasons || 'n/a'}` }] },
-              { type: 'section', fields }
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": `*#${pr.number}* ${pr.title}\n*대상 브랜치:* \`${base}\` ← *Source 브랜치:* \`${head}\`  by \`${pr.user.login}\`\n<${pr.html_url}|PR 링크>`
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": `*변경 파일:*\n${files}` },
+                  { "type": "mrkdwn", "text": `*추가/삭제:*\n+${additions} / -${deletions}` },
+                  { "type": "mrkdwn", "text": `*Top 디렉토리:*\n${topdirs}` },
+                  { "type": "mrkdwn", "text": `*요청 리뷰어(정보):*\n${reviewers || '없음'}` },
+                  { "type": "mrkdwn", "text": `*DB 변경 감지:*\n${dbChangedText}` }
+                ]
+              }
             ];
 
-            core.setOutput('blocks', JSON.stringify(initialBlocks)); # 기존 PR 정보 블록만 출력
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
             core.setOutput('dbChanged', String(dbChanged));
+            core.setOutput('dbChangedText', dbChangedText);
+            core.setOutput('initialBlocks', JSON.stringify(initialBlocks)); # 👍 이 값 사용
 
       - name: Prepare mentions (3 specific Slack users)
         id: mentions
@@ -161,115 +153,104 @@ jobs:
           MENTIONS="${{ secrets.CODE_OWNERS }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
 
-  # Job 이름과 내용 변경
-  notify-slack-detailed:
-    name: Notify Slack (Detailed + CodeRabbit)
+  send-coderabbit-summary:
+    name: "Wait for CodeRabbit and Find Summary"
     runs-on: ubuntu-latest
-    needs: [analyze, send-coderabbit-summary] # analyze와 send-coderabbit-summary 모두 완료되어야 함
-    if: always()
+    needs: [analyze]
+    if: github.event.pull_request.draft == false
+    outputs:
+      summary: ${{ steps.find_comment.outputs.summary }}
+
     steps:
-      - name: Combine Blocks and Post to Slack
-        id: post_slack
+      - name: "Wait for CodeRabbit review"
+        run: sleep 120 # 2분 대기. 필요에 따라 조절.
+
+      - name: "Find CodeRabbit summary comment"
+        id: find_comment
         uses: actions/github-script@v7
         with:
           script: |
-            // analyze Job에서 생성된 기본 PR 정보 블록들을 가져옵니다.
-            const prBlocks = JSON.parse(`${{ needs.analyze.outputs.blocks }}`);
-            // send-coderabbit-summary Job에서 가져온 CodeRabbit 요약 내용을 가져옵니다.
+            const prNumber = context.issue.number;
+            const { owner, repo } = context.repo;
+            const botUser = 'coderabbitai[bot]';
+            const summaryIdentifier = 'Summary by CodeRabbit'; # 이미지에서 확인된 문구
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+
+            const codeRabbitComment = comments.find(comment =>
+              comment.user.login === botUser && comment.body.includes(summaryIdentifier)
+            );
+
+            if (codeRabbitComment) {
+              console.log('CodeRabbit summary comment found!');
+              core.setOutput('summary', codeRabbitComment.body);
+            } else {
+              console.log('CodeRabbit summary comment not found after waiting.');
+              core.setOutput('summary', '');
+            }
+
+  notify-slack-detailed:
+    name: Notify Slack (Detailed + CodeRabbit)
+    runs-on: ubuntu-latest
+    needs: [analyze, send-coderabbit-summary]
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Combine All Blocks and Post to Slack
+        id: final_slack_payload
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const initialBlocks = JSON.parse(`${{ needs.analyze.outputs.initialBlocks }}`);
             const codeRabbitSummary = `${{ needs.send-coderabbit-summary.outputs.summary }}`;
             const mentions = `${{ needs.analyze.outputs.mentions }}`;
 
-            let finalBlocks = [...prBlocks];
+            let finalBlocks = [...initialBlocks];
 
-            // CodeRabbit 요약이 있을 경우에만 블록을 추가합니다.
+            finalBlocks[0].text.text = `🚀 *새로운 Pull Request가 도착했습니다!* ${mentions}\n\n` + finalBlocks[0].text.text;
+
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               finalBlocks.push({ "type": "divider" });
               finalBlocks.push({
                 "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": "🤖 CodeRabbit AI 요약",
-                  "emoji": true
-                }
+                "text": { "type": "plain_text", "text": "🤖 CodeRabbit AI 요약", "emoji": true }
               });
               finalBlocks.push({
                 "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": codeRabbitSummary || '요약을 가져오는 데 실패했거나, 요약이 없습니다.'
-                }
+                "text": { "type": "mrkdwn", "text": codeRabbitSummary }
               });
             } else {
               console.log("CodeRabbit summary was not found or was empty.");
             }
 
-            // 추가 정보 (범위 분석, Top 디렉토리)를 컨텍스트 블록으로 추가
             finalBlocks.push({ "type": "divider" });
             finalBlocks.push({
               "type": "context",
               "elements": [
                 {
                   "type": "mrkdwn",
-                  "text": "🔬 *범위 분석:* *`${{ needs.analyze.outputs.severity }}`* | *변경 파일:* `${{ needs.analyze.outputs.files }}`개 | *DB 변경:* `${{ needs.analyze.outputs.dbChanged == 'true' ? '⚠️ 있음' : '없음' }}`"
+                  "text": `🔬 *범위 분석:* *\`${{ needs.analyze.outputs.severity }}\`* | *변경 파일:* \`${{ needs.analyze.outputs.files }}\`개 | *DB 변경:* \`${{ needs.analyze.outputs.dbChangedText }}\``
                 },
                 {
                   "type": "mrkdwn",
-                  "text": "*Top 디렉토리:* ${{ needs.analyze.outputs.topdirs }}"
+                  "text": `*Top 디렉토리:* ${{ needs.analyze.outputs.topdirs }}`
                 }
               ]
             });
 
-            // Slack API 호출
-            await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'slack-notification.yml', // 실제 Slack 전송 워크플로우 ID (혹은 직접 호출)
-                ref: context.ref,
-                inputs: {
-                    channel_id: '${{ secrets.SLACK_CHANNEL_ID }}',
-                    mentions: mentions,
-                    blocks_json: JSON.stringify(finalBlocks)
-                }
-            });
-            // 👆 위 부분은 만약 Slack 전송을 별도 워크플로우로 뺀 경우의 예시입니다.
-            // 👇 기존 slackapi/slack-github-action 액션을 사용하여 직접 전송하는 경우
+            core.setOutput('slack_payload_blocks', JSON.stringify(finalBlocks));
+            core.setOutput('slack_payload_text', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${needs.analyze.outputs.severity}) ${mentions}`);
 
-            await github.rest.repos.createDispatchEvent({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              event_type: 'slack_notification',
-              client_payload: {
-                channel_id: '${{ secrets.SLACK_CHANNEL_ID }}',
-                text_fallback: `PR #${context.issue.number} - ${context.payload.pull_request.title} (${needs.analyze.outputs.severity})`,
-                blocks_json: JSON.stringify(finalBlocks),
-                mentions: mentions
-              }
-            });
-            // 👆 위 부분은 'repository_dispatch' 이벤트 사용 예시입니다.
-            // 👇 slackapi/slack-github-action 액션을 직접 사용하는 최종 버전
-
-            const slackPayload = {
-              channel: '${{ secrets.SLACK_CHANNEL_ID }}',
-              text: `PR #${context.issue.number} - ${context.payload.pull_request.title} (${needs.analyze.outputs.severity}) ${mentions}`,
-              blocks: finalBlocks
-            };
-
-            // slackapi/slack-github-action@v1.25.0 액션을 호출합니다.
-            // 이 스텝은 github-script 액션 내에서 직접 slack-github-action을 호출할 수는 없으므로
-            // 이 JSON을 다음 스텝으로 전달하는 방식으로 구현해야 합니다.
-            // 일단은 github-script에서 finalBlocks를 output으로 내보내고 다음 스텝에서 그 output을 사용하도록 합니다.
-            core.setOutput('slack_blocks_output', JSON.stringify(finalBlocks));
-            core.setOutput('slack_text_output', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${needs.analyze.outputs.severity}) ${mentions}`);
-
-      - name: Post to Slack with Combined Blocks
-        uses: slackapi/slack-github-action@v1.25.0 # v1.25.0 버전 사용 권장
+      - name: Post to Slack
+        uses: slackapi/slack-github-action@v1.25.0
         with:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID }}"
           bot-token: "${{ secrets.SLACK_BOT_TOKEN }}"
           payload: |
             {
-              "text": "${{ steps.post_slack.outputs.slack_text_output }}",
-              "blocks": ${{ steps.post_slack.outputs.slack_blocks_output }}
+              "text": "${{ steps.final_slack_payload.outputs.slack_payload_text }}",
+              "blocks": ${{ steps.final_slack_payload.outputs.slack_payload_blocks }}
             }
 
   comment-and-label:
@@ -279,7 +260,9 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
-    if: always()
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
@@ -319,9 +302,9 @@ jobs:
             const adds    = '${{ needs.analyze.outputs.additions }}';
             const dels    = '${{ needs.analyze.outputs.deletions }}';
             const reasons = `${{ needs.analyze.outputs.reasons }}`;
-            const dbChanged = '${{ needs.analyze.outputs.dbChanged }}' === 'true';
+            const dbChangedText = '${{ needs.analyze.outputs.dbChangedText }}'; # 👍 dbChangedText 사용
 
-            const dbLine = dbChanged
+            const dbLine = dbChangedText === '⚠️ 있음'
               ? '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n'
               : '';
 
@@ -352,41 +335,3 @@ jobs:
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
             });
-
-  send-coderabbit-summary:
-    name: "Wait for CodeRabbit and Find Summary"
-    runs-on: ubuntu-latest
-    needs: [analyze]
-    if: always()
-    outputs:
-      summary: ${{ steps.find_comment.outputs.summary }} # Slack으로 보낼 요약 내용을 출력
-
-    steps:
-      - name: "Wait for CodeRabbit review"
-        run: sleep 120
-
-      - name: "Find CodeRabbit summary comment"
-        id: find_comment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.issue.number;
-            const { owner, repo } = context.repo;
-            const botUser = 'coderabbitai[bot]';
-            const summaryIdentifier = 'Summary by CodeRabbit'; 
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
-            });
-
-            const codeRabbitComment = comments.find(comment =>
-              comment.user.login === botUser && comment.body.includes(summaryIdentifier)
-            );
-
-            if (codeRabbitComment) {
-              console.log('CodeRabbit summary comment found!');
-              core.setOutput('summary', codeRabbitComment.body);
-            } else {
-              console.log('CodeRabbit summary comment not found after waiting.');
-              core.setOutput('summary', '');
-            }
