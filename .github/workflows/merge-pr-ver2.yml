@@ -2,15 +2,7 @@ name: 👩‍💻👨‍💻 PR Review Noti
 
 on:
   pull_request:
-    types:
-      [
-        opened,
-        reopened,
-        ready_for_review,
-        review_requested,
-        synchronize,
-        labeled,
-      ]
+    types: [opened] # PR이 열렸을 때 트리거
 
 jobs:
   analyze:
@@ -151,52 +143,6 @@ jobs:
               dbChanged ? `DB 변경 의심(sql 또는 src/entities/*)` : null,
             ].filter(Boolean).join(', ');
 
-            // Slack Blocks
-            const header = [
-              `*#${pr.number}*  ${pr.title}`,
-              `*${base}* ← *${head}*  by \`${pr.user.login}\``,
-              `<${pr.html_url}|PR 링크>`
-            ].join('\n');
-
-            const fields = [
-              { type: 'mrkdwn', text: `*변경 파일*\n${files}` },
-              { type: 'mrkdwn', text: `*추가/삭제*\n+${additions} / -${deletions}` },
-              { type: 'mrkdwn', text: `*Top 디렉토리*\n${topdirs}` },
-              { type: 'mrkdwn', text: `*요청 리뷰어(정보)*\n${reviewers}` },
-            ];
-
-            if (dbChanged) {
-              fields.push({ type: 'mrkdwn', text: `*DB 변경 감지*\n:warning: \`sql\`, \`src/entities/\`` });
-            }
-
-            const blocks = [
-              // 헤더 박스 느낌
-              {
-                type: 'section',
-                text: { type: 'mrkdwn', text: `:package: *PR 정보*\n${header}` }
-              },
-              { type: 'divider' },
-
-              // 상세 필드 박스
-              {
-                type: 'section',
-                fields
-              },
-              { type: 'divider' },
-
-              // 범위 판단 및 사유
-              {
-                type: 'context',
-                elements: [
-                  {
-                    type: 'mrkdwn',
-                    text: `:triangular_flag_on_post: 범위판단: *${severity}*  \n•  사유: ${reasons || 'n/a'}`
-                  }
-                ]
-              }
-            ];
-
-            core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
@@ -207,41 +153,115 @@ jobs:
         shell: bash
         run: |
           # 지정 3명 Slack 멘션(Secrets에 <@UXXXX> 형식)
-          MENTIONS="${{ vars.CODE_OWNERS }}"
+          MENTIONS="${{ secrets.CODE_OWNERS }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
 
-  notify:
-    name: Notify Slack (detailed)
+  # 기존 notify Job은 Slack Blocks를 사용했으므로, 새로운 템플릿을 위해 이름을 변경하거나 새로 정의하는 것이 좋습니다.
+  # 여기서는 이름을 변경하고 새 템플릿을 적용했습니다.
+  notify-slack-detailed:
+    name: Notify Slack with Detailed PR Info & CodeRabbit Summary
     runs-on: ubuntu-latest
-    needs: [analyze]
-    if: always()
+    needs: [analyze, send-coderabbit-summary] # CodeRabbit 요약 Job도 의존하도록 추가
+    if: >
+      github.event.pull_request.base.ref == 'dev' && # dev 브랜치에 대해서만 알림
+      github.event.pull_request.draft == false
     steps:
       - name: Post to Slack (detailed + auto-mentions)
-        uses: slackapi/slack-github-action@v2.0.0-rc.2
+        uses: slackapi/slack-github-action@v1.25.0
         with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          channel-id: "${{ secrets.SLACK_CHANNEL_ID }}"
+          bot-token: "${{ secrets.SLACK_BOT_TOKEN }}"
           payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "리뷰 필요 (PR #${{ github.event.pull_request.number }}) — 범위: ${{ needs.analyze.outputs.severity }}  ${{ needs.analyze.outputs.mentions }}"
-            blocks: ${{ needs.analyze.outputs.blocks }}
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚀 *새로운 Pull Request가 도착했습니다!* ${{ needs.analyze.outputs.mentions }}"
+                  }
+                },
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${{ github.event.pull_request.title }}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*PR 번호:*\n<${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*작성자:*\n`${{ github.event.pull_request.user.login }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*브랜치:*\n`${{ github.event.pull_request.base.ref }}` ← `${{ github.event.pull_request.head.ref }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*코드 변경:*\n`+${{ needs.analyze.outputs.additions }}` `-${{ needs.analyze.outputs.deletions }}`"
+                    }
+                  ]
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🤖 CodeRabbit AI 요약",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ needs.send-coderabbit-summary.outputs.summary || '요약을 가져오는 데 실패했거나, 요약이 없습니다.' }}"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "🔬 *범위 분석:* *`${{ needs.analyze.outputs.severity }}`* | *변경 파일:* `${{ needs.analyze.outputs.files }}`개 | *DB 변경:* `${{ needs.analyze.outputs.dbChanged == 'true' ? '⚠️ 있음' : '없음' }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Top 디렉토리:* ${{ needs.analyze.outputs.topdirs }}"
+                    }
+                  ]
+                }
+              ]
+            }
 
   comment-and-label:
     name: Comment on PR (HIGH) + Auto label
     runs-on: ubuntu-latest
     needs: [analyze]
     permissions:
-      pull-requests: write # 코멘트/라벨(issues API)에 필요
+      pull-requests: write
       issues: write
-    if: always()
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
         with:
           script: |
-            /**
-             * HIGH 시 needs-review 라벨 자동 부여(중복 방지)
-             */
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
             const targetLabel = 'needs-review';
@@ -260,18 +280,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            /**
-             * HIGH 시 PR 자동 코멘트(중복 방지)
-             * - DB 변경 감지 시 해당 안내 포함
-             * - 말미: "이 코멘트에 이모지 달면 리뷰 시작" 유도
-             */
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
-
-            // 중복 방지를 위한 마커
-            const MARKER = '<!-- large-pr-comment -->';
-
-            // 기존 코멘트 확인
+            const MARKER = '';
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr.number, per_page: 100
             });
@@ -290,7 +301,6 @@ jobs:
               ? '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n'
               : '';
 
-            // 본문(간결 + 행동 유도)
             const body = `
             ${MARKER}
 
@@ -318,3 +328,47 @@ jobs:
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
             });
+
+  send-coderabbit-summary:
+    name: "Wait for CodeRabbit and Find Summary"
+    runs-on: ubuntu-latest
+    needs: [analyze] # analyze Job이 먼저 끝나야 합니다.
+    # draft가 아니고, dev 브랜치로 요청된 PR일 때만 실행
+    if: >
+      github.event.pull_request.draft == false
+    outputs:
+      summary: ${{ steps.find_comment.outputs.summary }} # Slack으로 보낼 요약 내용을 출력
+
+    steps:
+      - name: "Wait for CodeRabbit review"
+        run: sleep 120 # ❗ 2분 대기. CodeRabbit이 코멘트를 남길 시간을 줍니다. 이 시간은 필요에 따라 조절하세요.
+
+      - name: "Find CodeRabbit summary comment"
+        id: find_comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const { owner, repo } = context.repo;
+            const botUser = 'coderabbitai[bot]';
+            // ❗❗ 중요: 이 문구는 실제 CodeRabbit 요약 코멘트의 제목과 정확히 일치해야 합니다.
+            // 예를 들어, '## PR Analysis' 또는 '✨ PR Summary' 등으로 확인 후 수정하세요.
+            const summaryIdentifier = 'Summary by CodeRabbit';
+
+            // PR에 달린 모든 코멘트를 가져옵니다.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber,
+            });
+
+            // 봇이 작성한 코멘트 중에서 '요약' 문구를 포함하는 코멘트를 찾습니다.
+            const codeRabbitComment = comments.find(comment =>
+              comment.user.login === botUser && comment.body.includes(summaryIdentifier)
+            );
+
+            if (codeRabbitComment) {
+              console.log('CodeRabbit summary comment found!');
+              core.setOutput('summary', codeRabbitComment.body);
+            } else {
+              console.log('CodeRabbit summary comment not found after waiting.');
+              core.setOutput('summary', ''); // 요약 없을 시 대체 마크업
+            }
