@@ -187,36 +187,28 @@ jobs:
           script: |
             const prNumber = context.issue.number;
             const { owner, repo } = context.repo;
-            const botUser = 'coderabbitai[bot]';
             const summaryIdentifier = 'Summary by CodeRabbit';
-            const endIdentifier = 'Walkthrough'; // Summary 섹션의 끝을 나타내는 다음 섹션 제목
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: prNumber,
             });
 
-            const codeRabbitComment = comments.reverse().find(comment =>
-              comment.user.login === botUser && comment.body.includes(summaryIdentifier)
+            console.log(comments);
+
+            const codeRabbitComment = comments.find(comment =>
+              comment.body.includes(summaryIdentifier)
             );
 
-            if (codeRabbitComment) {
-              console.log('Found the latest CodeRabbit comment.');
-              const commentBody = codeRabbitComment.body;
-              let summaryBody = '';
+            console.log(codeRabbitComment);
 
-              if (commentBody.includes(summaryIdentifier)) {
-                // [수정된 핵심 로직]
-                // 1. 'Walkthrough'를 기준으로 뒷부분을 잘라내고,
-                const topPart = commentBody.split(endIdentifier)[0];
-                // 2. 남은 앞부분에서 'Summary by CodeRabbit' 뒷부분을 가져옵니다.
-                summaryBody = topPart.split(summaryIdentifier)[1]?.trim() || '';
-              }
+            if (codeRabbitComment) {
+              console.log('Found the dedicated summary comment.');
               
+              const summaryBody = codeRabbitComment.body.split(summaryIdentifier)[1]?.trim() || '';
+
               if (summaryBody) {
-                console.log('Successfully extracted summary.');
                 core.setOutput('summary', summaryBody);
               } else {
-                console.log('Could not extract summary from the comment.');
                 core.setOutput('summary', '');
               }
             } else {
