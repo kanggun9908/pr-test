@@ -177,7 +177,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 30 # 대기 시간은 그대로 둡니다.
+        run: sleep 10 # 대기 시간은 그대로 둡니다.
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
