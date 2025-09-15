@@ -188,18 +188,16 @@ jobs:
           MENTIONS="${{ secrets.CODE_OWNERS }}"
           echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
 
-  # CodeRabbit 요약을 가져오는 Job 추가
   send-coderabbit-summary:
     name: "Wait for CodeRabbit and Find Summary"
     runs-on: ubuntu-latest
-    needs: [analyze] # analyze Job이 먼저 완료되어야 함
+    needs: [analyze]
     if: github.event.pull_request.draft == false
     outputs:
       summary: ${{ steps.find_comment.outputs.summary }}
 
     steps:
       - name: "Wait for CodeRabbit review"
-        # ❗ CodeRabbit이 코멘트를 작성할 충분한 시간을 기다립니다. 필요에 따라 조절
         run: sleep 120
 
       - name: "Find CodeRabbit summary comment"
@@ -210,7 +208,7 @@ jobs:
             const prNumber = context.issue.number;
             const { owner, repo } = context.repo;
             const botUser = 'coderabbitai[bot]';
-            const summaryIdentifier = 'Summary by CodeRabbit'; // 이미지에서 확인된 요약 코멘트의 시작 문구
+            const summaryIdentifier = 'Summary by CodeRabbit';
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: prNumber,
@@ -222,7 +220,6 @@ jobs:
 
             if (codeRabbitComment) {
               console.log('CodeRabbit summary comment found!');
-              // 요약 내용의 첫 줄(Summary by CodeRabbit)을 제거하여 실제 내용만 가져옴
               const summaryBody = codeRabbitComment.body.split('\n').slice(1).join('\n').trim();
               core.setOutput('summary', summaryBody);
             } else {
@@ -230,22 +227,27 @@ jobs:
               core.setOutput('summary', '');
             }
 
-  # 기존 notify Job을 재정의하여 상세 정보와 CodeRabbit 요약을 함께 보냅니다.
-  notify-slack-detailed: # Job 이름 변경
+  notify-slack-detailed:
     name: Notify Slack with Detailed PR Info & CodeRabbit Summary
     runs-on: ubuntu-latest
-    needs: [analyze, send-coderabbit-summary] # analyze와 send-coderabbit-summary 모두 완료되어야 함
-    if: github.event.pull_request.draft == false # 초안 PR이 아닐 경우에만 실행
+    needs: [analyze, send-coderabbit-summary]
+    if: github.event.pull_request.draft == false
     steps:
       - name: Generate Final Slack Payload
         id: generate_payload
         uses: actions/github-script@v7
         with:
           script: |
-            // analyze Job에서 생성된 기본 PR 정보 블록들을 가져옵니다.
-            let existingBlocks = JSON.parse(`${{ needs.analyze.outputs.blocks }}`);
-            const codeRabbitSummary = `${{ needs.send-coderabbit-summary.outputs.summary }}`;
+            // analyze Job에서 JSON 문자열로 출력된 블록을 가져와 파싱합니다.
+            let existingBlocks = JSON.parse(`${{ needs.analyze.outputs.blocks }}`); 
+            // send-coderabbit-summary Job에서 가져온 요약 문자열을 가져옵니다.
+            // 이 문자열은 이미 `github-script` 내부에서 JSON.parse를 거치지 않고 직접 출력되었으므로,
+            // 여기서 다시 JSON.parse를 할 필요는 없습니다. 만약 따옴표 문제가 발생한다면,
+            // 이때는 이 문자열을 JSON.stringify로 감싸서 안전하게 만들어야 합니다.
+            // 현재는 단순 문자열로 가정하고 처리합니다.
+            const codeRabbitSummary = `${{ needs.send-coderabbit-summary.outputs.summary }}`; 
             const mentions = `${{ needs.analyze.outputs.mentions }}`;
+            const severity = `${{ needs.analyze.outputs.severity }}`;
 
             // 첫 번째 section 블록에 멘션 추가
             if (existingBlocks.length > 0 && existingBlocks[0].type === 'section') {
@@ -267,7 +269,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": codeRabbitSummary
+                  "text": codeRabbitSummary // 요약 문자열 삽입
                 }
               });
             } else {
@@ -276,10 +278,10 @@ jobs:
 
             // 최종 페이로드를 output으로 내보냅니다.
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
-            core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${needs.analyze.outputs.severity})`);
+            core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`);
 
       - name: Post to Slack
-        uses: slackapi/slack-github-action@v1.25.0 # 최신 버전 사용 권장
+        uses: slackapi/slack-github-action@v1.25.0
         with:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID }}"
           bot-token: "${{ secrets.SLACK_BOT_TOKEN }}"
@@ -294,7 +296,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [analyze]
     permissions:
-      pull-requests: write # 코멘트/라벨(issues API)에 필요
+      pull-requests: write
       issues: write
     if: >
       needs.analyze.outputs.severity == 'HIGH'
