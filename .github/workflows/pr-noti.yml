@@ -245,32 +245,40 @@ jobs:
             }
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
-              let summary = codeRabbitSummary.replace(/<!--[\s\S]*?-->/g, '').trim();
+              const lines = codeRabbitSummary
+                .replace(/<!--[\s\S]*?-->/g, '') // 주석 제거
+                .split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0);
 
-              // 하위 항목: 앞에 "-" 있는 줄 → 들여쓰기 + bullet
-              summary = summary.replace(/^\s*-\s+(.*)$/gm, '    • $1');
+              let formattedLines = ['🤖 CodeRabbit AI 요약\n'];
 
-              // 최상위 항목: 앞에 "-" 없는 줄 → 굵은 제목
-              summary = summary.replace(/^(?!\s*•)(.*\S.*)$/gm, '\n*$1*\n');
+              lines.forEach(line => {
+                if (line.startsWith('- ')) {
+                  // 하위 항목: 들여쓰기 + bullet
+                  formattedLines.push('    • ' + line.slice(2).trim());
+                } else {
+                  // 최상위 항목: 굵게 표시
+                  formattedLines.push('\n*' + line + '*\n');
+                }
+              });
 
-              const cleanedSummary = summary.trim();
+              const cleanedSummary = formattedLines.join('\n');
 
-              if (cleanedSummary) {
               existingBlocks.push({ type: "divider" });
-              // ⭐ preformatted block 사용
               existingBlocks.push({
                 type: "rich_text",
                 elements: [
                   {
                     type: "rich_text_preformatted",
                     elements: [
-                      { type: "text", text: `🤖 CodeRabbit AI 요약\n\n${cleanedSummary}` }
-                      ]
-                    }
-                  ]
-                });
-              }
+                      { type: "text", text: cleanedSummary }
+                    ]
+                  }
+                ]
+              });
             }
+
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput(
               'final_text_fallback',
