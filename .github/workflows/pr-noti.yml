@@ -179,7 +179,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 20
+        run: sleep 120
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
@@ -232,12 +232,7 @@ jobs:
           SEVERITY: ${{ needs.analyze.outputs.severity }}
         with:
           script: |
-            // ⭐️ 변경점: attachments 구조를 처리하기 위해 payload 전체를 먼저 파싱합니다.
-            const initialBlocksPayload = process.env.BLOCKS || '{"attachments":[{"blocks":[]}]}';
-            const payload = JSON.parse(initialBlocksPayload);
-            // 실제 블록 배열은 payload 안에서 찾아냅니다.
-            const existingBlocks = payload.attachments[0].blocks;
-
+            let existingBlocks = JSON.parse(process.env.BLOCKS);
             const codeRabbitSummary = process.env.SUMMARY;
             const mentions = process.env.MENTIONS;
             const severity = process.env.SEVERITY;
@@ -249,27 +244,26 @@ jobs:
               });
             }
 
-            if (codeRabbitSummary) {
-              // ⭐️ 변경점: CodeRabbit 요약 텍스트를 정돈하는 포맷팅 로직입니다.
-              // 1. 주석 제거
+            if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               let summary = codeRabbitSummary.replace(/<!--[\s\S]*?-->/g, '').trim();
-              // 2. 들여쓰기 있는 항목을 불렛 포인트로 변경
               summary = summary.replace(/^\s+- (.*)/gm, '  • $1');
-              // 3. 들여쓰기 없는 항목을 굵은 제목 + 문단 나누기로 변경
               summary = summary.replace(/^- (.*)/gm, '\n*$1*');
+
               const cleanedSummary = summary.trim();
 
-              existingBlocks.push({ type: "divider" });
-              existingBlocks.push({
-                type: "section",
-                text: { type: "mrkdwn", text: `*🤖 CodeRabbit AI 요약*\n${cleanedSummary}` }
-              });
+              if (cleanedSummary) {
+                existingBlocks.push({ type: "divider" });
+                existingBlocks.push({
+                  type: "section",
+                  text: { type: "mrkdwn", text: `*🤖 CodeRabbit AI 요약*\n${cleanedSummary}` }
+                });
+              }
             }
-
-            // ⭐️ 변경점: 수정된 내용이 포함된 payload 전체를 다시 문자열로 만들어 출력합니다.
-            core.setOutput('final_blocks_json', JSON.stringify(payload));
-            core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`);
-
+            core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
+            core.setOutput(
+              'final_text_fallback',
+              `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`
+            );
       - name: Post to Slack
         uses: slackapi/slack-github-action@v1.25.0
         env:
