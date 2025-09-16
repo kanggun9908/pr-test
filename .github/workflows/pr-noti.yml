@@ -255,11 +255,11 @@ jobs:
 
               lines.forEach(line => {
                 if (line.startsWith('- ')) {
-                  // 하위 항목: 들여쓰기 + bullet
+                  // 하위 항목: 들여쓰기 4칸 + bullet, - 제거
                   formattedLines.push('    • ' + line.slice(2).trim());
                 } else {
-                  // 최상위 항목: 그대로, 볼드 처리
-                  formattedLines.push('\n*' + line + '*\n');
+                  // 최상위 항목: 그대로 출력
+                  formattedLines.push(line);
                 }
               });
 
@@ -278,6 +278,7 @@ jobs:
                 ]
               });
             }
+
 
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput(
