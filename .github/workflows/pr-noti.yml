@@ -54,15 +54,12 @@ jobs:
               }, {})
             ).sort((a,b)=>b[1]-a[1]).slice(0,5)
              .map(([d,c])=>`${d}(${c})`).join(', ');
-            const reviewers = (context.payload.requested_reviewers || []).map(u=>u.login)
-                              .concat((context.payload.requested_teams || []).map(t=>`team:${t.slug}`))
-                              .join(',');
                               
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
             core.setOutput('topdirs', topdirs || '(none)');
-            core.setOutput('reviewers', '@gunkang0208' || 'n/a');
+            core.setOutput('reviewers', '@be' || 'n/a');
 
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
