@@ -244,22 +244,35 @@ jobs:
               });
             }
 
-            existingBlocks.push({
-              type: "header",
-              text: { type: "plain_text", text: "🤖 CodeRabbit 요약", emoji: true }
-            });
-            existingBlocks.push({ type: "divider" });
+            if (codeRabbitSummary && codeRabbitSummary.length > 0) {
+              existingBlocks.push({ type: "divider" });
+              existingBlocks.push({
+                type: "header",
+                text: { type: "plain_text", text: "🤖 CodeRabbit AI 요약", emoji: true }
+              });
 
-            const summaryLines = codeRabbitSummary
-              .split("\n")
-              .filter(Boolean)
-              .map(line => `• ${line}`)
-              .join("\n");
+              const summaryLines = codeRabbitSummary
+                .split("\n")
+                .filter(line => line.trim().length > 0)
+                .map(line => {
+                  const trimmed = line.trim();
 
-            existingBlocks.push({
-              type: "section",
-              text: { type: "mrkdwn", text: summaryLines }
-            });
+                  if (/^-\s/.test(trimmed)) {
+                    // 1단계 (대분류) → 굵게 표시
+                    return `*${trimmed.replace(/^- /, "")}*`;
+                  } else if (/^\s*-\s/.test(line)) {
+                    // 2단계 (하위 항목) → bullet + 들여쓰기
+                    return `  • ${trimmed.replace(/^- /, "")}`;
+                  }
+                  return trimmed;
+                })
+                .join("\n");
+
+              existingBlocks.push({
+                type: "section",
+                text: { type: "mrkdwn", text: summaryLines }
+              });
+            }
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`);
 
