@@ -112,7 +112,7 @@ jobs:
               HAS_LABEL ? `주요 라벨 포함` : null,
             ].filter(Boolean).join(', ');
 
-            const severityEmoji = { HIGH: '🚨', MEDIUM: '⚠️', LOW: '⚪️' }[severity];
+            const severityEmoji = { HIGH: '🔴', MEDIUM: '🟡', LOW: '🟢' }[severity];
 
             const header = {
               "type": "header",
@@ -136,7 +136,7 @@ jobs:
               "elements": [
                 {
                   "type": "mrkdwn",
-                  "text": `${severityEmoji} 범위판단: *${severity}* |  사유: ${reasons || 'n/a'}`
+                  "text": `${severityEmoji} 범위판단: *${severity}*\n사유: ${reasons || 'n/a'}`
                 }
               ]
             };
@@ -244,13 +244,22 @@ jobs:
               });
             }
 
-            if (codeRabbitSummary && codeRabbitSummary.length > 0) {
-              existingBlocks.push({ "type": "divider" });
-              existingBlocks.push({
-                "type": "section",
-                "text": { "type": "mrkdwn", "text": `*🤖 CodeRabbit AI 요약*\n${codeRabbitSummary}` }
-              });
-            }
+            existingBlocks.push({
+              type: "header",
+              text: { type: "plain_text", text: "🤖 CodeRabbit 요약", emoji: true }
+            });
+            existingBlocks.push({ type: "divider" });
+
+            const summaryLines = codeRabbitSummary
+              .split("\n")
+              .filter(Boolean)
+              .map(line => `• ${line}`)
+              .join("\n");
+
+            existingBlocks.push({
+              type: "section",
+              text: { type: "mrkdwn", text: summaryLines }
+            });
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`);
 
