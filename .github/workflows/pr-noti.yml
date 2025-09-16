@@ -253,13 +253,22 @@ jobs:
 
               let formattedLines = ['🤖 CodeRabbit AI 요약\n'];
 
+              let currentTopLevel = null;
               lines.forEach(line => {
                 if (line.startsWith('- ')) {
-                  // 하위 항목: 들여쓰기 4칸 + bullet, - 제거
-                  formattedLines.push('    • ' + line.slice(2).trim());
+                  const content = line.slice(2).trim();
+                  if (!currentTopLevel) {
+                    // 최상위 항목: 불렛 없이 그냥 텍스트
+                    currentTopLevel = content;
+                    formattedLines.push(currentTopLevel);
+                  } else {
+                    // 하위 항목: 4칸 들여쓰기 + •
+                    formattedLines.push('    • ' + content);
+                  }
                 } else {
-                  // 최상위 항목: 그대로 출력
-                  formattedLines.push(line);
+                  // 최상위 항목: 불렛 없이 그대로
+                  currentTopLevel = line;
+                  formattedLines.push(currentTopLevel);
                 }
               });
 
@@ -278,6 +287,7 @@ jobs:
                 ]
               });
             }
+
 
 
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
