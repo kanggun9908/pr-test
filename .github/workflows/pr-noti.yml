@@ -190,7 +190,7 @@ jobs:
             const summaryIdentifier = '## Summary by CodeRabbit';
 
             const prBody = context.payload.pull_request?.body ?? '';
-            console.log(context.payload);
+            console.log(JSON.stringify(context.payload, null, 2));
             console.log(prBody);
 
             if (prBody.includes(summaryIdentifier)) {
