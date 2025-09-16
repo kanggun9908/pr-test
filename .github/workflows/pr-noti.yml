@@ -187,19 +187,18 @@ jobs:
           script: |
             const prNumber = context.issue.number;
             const { owner, repo } = context.repo;
-            const summaryIdentifier = 'Summary by CodeRabbit';
+            const summaryIdentifier = '## Summary by CodeRabbit';
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: prNumber,
             });
 
-            console.log(comments);
+            const prBody = github.context.payload.pull_request?.body ?? '';
+            console.log(prBody);
 
             const codeRabbitComment = comments.find(comment =>
               comment.body.includes(summaryIdentifier)
             );
-
-            console.log(codeRabbitComment);
 
             if (codeRabbitComment) {
               console.log('Found the dedicated summary comment.');
