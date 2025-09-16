@@ -257,12 +257,10 @@ jobs:
               lines.forEach(line => {
                 if (line.startsWith('- ')) {
                   const content = line.slice(2).trim();
+                  formattedLines.push(content);
                 } else if (line.startsWith('  -')) {
                   const content = line.slice(3).trim();
                   formattedLines.push('    • ' + content);
-                } else { 
-                  formattedLines.push('    • ' + content);
-                }
               })
 
               const cleanedSummary = formattedLines.join('\n');
