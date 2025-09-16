@@ -62,7 +62,7 @@ jobs:
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
             core.setOutput('topdirs', topdirs || '(none)');
-            core.setOutput('reviewers', reviewers || 'n/a');
+            core.setOutput('reviewers', '@gunkang0208' || 'n/a');
 
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
