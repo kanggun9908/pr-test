@@ -196,6 +196,7 @@ jobs:
               pull_number: prNumber,
             });
 
+            console.log(latestPr.body);
             const prBody = latestPr.body ?? '';
             const endMarker = '<!--';
 
