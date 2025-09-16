@@ -190,11 +190,15 @@ jobs:
             const summaryIdentifier = '## Summary by CodeRabbit';
 
             const prBody = context.payload.pull_request?.body ?? '';
+            const endMarker = '<!--';
 
             if (prBody.includes(summaryIdentifier)) {
-              const summaryContent = prBody.split(summaryIdentifier)[1]?.replace(/\s*$/, '').trim() ?? '';
+              let summaryContent = prBody.split(summaryIdentifier)[1]?.trim() ?? '';
 
               if (summaryContent) {
+                if (summaryContent.includes(endMarker)) {
+                  summaryContent = summaryContent.split(endMarker)[0];
+                }
                 core.setOutput('summary', summaryContent);  
               } else {
                 core.setOutput('summary', '');
