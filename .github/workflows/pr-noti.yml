@@ -248,8 +248,8 @@ jobs:
               const lines = codeRabbitSummary
                 .replace(/<!--[\s\S]*?-->/g, '') // 주석 제거
                 .split('\n')
-                .map(l => l.trim())
-                .filter(l => l.length > 0);
+                .map(l => l.trimEnd())           // 오른쪽 공백 제거
+                .filter(l => l.length > 0);     // 빈 줄 제거
 
               let formattedLines = ['🤖 CodeRabbit AI 요약\n'];
 
@@ -258,7 +258,7 @@ jobs:
                   // 하위 항목: 들여쓰기 + bullet
                   formattedLines.push('    • ' + line.slice(2).trim());
                 } else {
-                  // 최상위 항목: 굵게 표시
+                  // 최상위 항목: 그대로, 볼드 처리
                   formattedLines.push('\n*' + line + '*\n');
                 }
               });
