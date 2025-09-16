@@ -179,7 +179,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 120
+        run: sleep 20
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
@@ -246,16 +246,23 @@ jobs:
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               let summary = codeRabbitSummary.replace(/<!--[\s\S]*?-->/g, '').trim();
-              summary = summary.replace(/^\s+- (.*)/gm, '  • $1');
+              summary = summary.replace(/^\s+- (.*)/gm, '    • $1');
               summary = summary.replace(/^- (.*)/gm, '\n*$1*');
-
               const cleanedSummary = summary.trim();
 
               if (cleanedSummary) {
-                existingBlocks.push({ type: "divider" });
-                existingBlocks.push({
-                  type: "section",
-                  text: { type: "mrkdwn", text: `*🤖 CodeRabbit AI 요약*\n${cleanedSummary}` }
+              existingBlocks.push({ type: "divider" });
+              // ⭐ preformatted block 사용
+              existingBlocks.push({
+                type: "rich_text",
+                elements: [
+                  {
+                    type: "rich_text_preformatted",
+                    elements: [
+                      { type: "text", text: `🤖 CodeRabbit AI 요약\n\n${cleanedSummary}` }
+                      ]
+                    }
+                  ]
                 });
               }
             }
