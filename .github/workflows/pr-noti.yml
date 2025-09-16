@@ -189,30 +189,20 @@ jobs:
             const { owner, repo } = context.repo;
             const summaryIdentifier = '## Summary by CodeRabbit';
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
-            });
-
-            const prBody = github.context.payload.pull_request?.body ?? '';
+            const prBody = context.payload.pull_request?.body ?? '';
             console.log(prBody);
 
-            const codeRabbitComment = comments.find(comment =>
-              comment.body.includes(summaryIdentifier)
-            );
+            if (prBody.includes(summaryIdentifier)) {
+              const summaryContent = prBody.split(summaryIdentifier)[1]?.trim() ?? '';
 
-            if (codeRabbitComment) {
-              console.log('Found the dedicated summary comment.');
-              
-              const summaryBody = codeRabbitComment.body.split(summaryIdentifier)[1]?.trim() || '';
-
-              if (summaryBody) {
-                core.setOutput('summary', summaryBody);
+              if (summaryContent) {
+                core.setOutput('summary', summaryContent);  
               } else {
                 core.setOutput('summary', '');
               }
             } else {
-              console.log('CodeRabbit summary comment not found after waiting.');
-              core.setOutput('summary', '');
+              console.log('CodeRabbit summary not found in PR body, checking comments...');
+              core.setOutput('summary','');
             }
 
   notify-slack-detailed:
