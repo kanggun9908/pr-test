@@ -246,7 +246,7 @@ jobs:
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               let summary = codeRabbitSummary.replace(/<!--[\s\S]*?-->/g, '').trim();
-              summary = summary.replace(/^\s+- (.*)/gm, '    • $1');
+              summary = summary.replace(/^\s+- (.*)/gm, '\n    • $1');
               summary = summary.replace(/^- (.*)/gm, '\n*$1*');
               const cleanedSummary = summary.trim();
 
