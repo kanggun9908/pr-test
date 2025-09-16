@@ -11,6 +11,8 @@ on:
 
 jobs:
   analyze:
+    # TODO: 워크플로우 작동 조건 조정 필요 혹은 브랜치명이 다를 경우 변경
+    # 현재는 dev 브랜치로 머지 하려는 경우 또는 release/main 브랜치로 hotfix 브랜치를 머지 시에만 작동
     if: github.base_ref == 'dev' || ((github.base_ref == 'release' || github.base_ref == 'main') && startsWith(github.head_ref, 'hotfix/'))
     name: Analyze PR scope
     runs-on: ubuntu-latest
@@ -87,8 +89,15 @@ jobs:
               page++;
             }
             const filenames = allFiles.map(f=>f.filename);
+
+            // sevirity 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
+            // TODO: 파일 수 기준 조정 필요 시 변경
             const BIG_FILES = files > 25;
+
+            // TODO: 라인 수 기준 조정 필요 시 변경
             const BIG_LINES = additions > 800;
+
+            // TODO: 핵심 디렉터리 경로 조정 필요 시 변경
             const TOUCH_CORE = filenames.some(fn =>
               (fn.startsWith('src/') && !fn.substring(4).includes('/')) || fn.toLowerCase().endsWith('.sql') ||
               fn.includes('Dockerfile') || fn.startsWith('.github/workflows')
@@ -179,7 +188,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 20
+        run: sleep 180
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
@@ -196,7 +205,6 @@ jobs:
               pull_number: prNumber,
             });
 
-            console.log(latestPr.body);
             const prBody = latestPr.body ?? '';
             const endMarker = '<!--';
 
