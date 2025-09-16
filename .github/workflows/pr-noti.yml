@@ -190,7 +190,13 @@ jobs:
             const { owner, repo } = context.repo;
             const summaryIdentifier = '## Summary by CodeRabbit';
 
-            const prBody = context.payload.pull_request?.body ?? '';
+            const { data: latestPr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            const prBody = latestPr.body ?? '';
             const endMarker = '<!--';
 
             if (prBody.includes(summaryIdentifier)) {
