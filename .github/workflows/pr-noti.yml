@@ -156,16 +156,7 @@ jobs:
 
             const blocks = [header, prInfo, contextBlock, divider, mainContent];
 
-            const payload = {
-              "attachments": [
-                {
-                  "color": "good",
-                  "blocks": blocks
-                }
-              ]
-            };
-
-            core.setOutput('blocks', JSON.stringify(payload));
+            core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
@@ -187,7 +178,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 10
+        run: sleep 120
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
