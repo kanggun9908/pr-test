@@ -246,8 +246,13 @@ jobs:
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               let summary = codeRabbitSummary.replace(/<!--[\s\S]*?-->/g, '').trim();
-              summary = summary.replace(/^\s+- (.*)/gm, '\n    • $1');
-              summary = summary.replace(/^- (.*)/gm, '\n*$1*');
+
+              // 1. 최상위 항목(-) → 4칸 들여쓰기 + 불렛
+              summary = summary.replace(/^\s*-\s+(.*)/gm, '    • $1');
+
+              // 2. 들여쓰기 없는 항목 → 굵은 제목 + 문단 구분
+              summary = summary.replace(/^\s*•\s+작업\(Chores\)/gm, '\n*$1*'); // 필요시 커스터마이징
+
               const cleanedSummary = summary.trim();
 
               if (cleanedSummary) {
