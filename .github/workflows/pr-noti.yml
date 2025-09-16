@@ -261,7 +261,7 @@ jobs:
                 } else if (line.startsWith('  -')) {
                   const content = line.slice(3).trim();
                   formattedLines.push('    • ' + content);
-              })
+              });
 
               const cleanedSummary = formattedLines.join('\n');
 
