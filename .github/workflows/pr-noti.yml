@@ -156,7 +156,16 @@ jobs:
 
             const blocks = [header, prInfo, contextBlock, divider, mainContent];
 
-            core.setOutput('blocks', JSON.stringify(blocks));
+            const payload = {
+              "attachments": [
+                {
+                  "color": "good",
+                  "blocks": blocks
+                }
+              ]
+            };
+
+            core.setOutput('blocks', JSON.stringify(payload));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
