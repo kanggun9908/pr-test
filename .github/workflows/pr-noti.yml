@@ -190,6 +190,7 @@ jobs:
             const summaryIdentifier = '## Summary by CodeRabbit';
 
             const prBody = context.payload.pull_request?.body ?? '';
+            console.log(context.payload);
             console.log(prBody);
 
             if (prBody.includes(summaryIdentifier)) {
@@ -201,7 +202,7 @@ jobs:
                 core.setOutput('summary', '');
               }
             } else {
-              console.log('CodeRabbit summary not found in PR body, checking comments...');
+              console.log('CodeRabbit summary not found in PR body');
               core.setOutput('summary','');
             }
 
