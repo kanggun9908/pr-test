@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Gather PR file stats
         id: gather
+        env:
+          CODE_REVIEWERS: ${{ vars.CODE_REVIEWERS }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -54,12 +56,14 @@ jobs:
               }, {})
             ).sort((a,b)=>b[1]-a[1]).slice(0,5)
              .map(([d,c])=>`${d}(${c})`).join(', ');
+
+            const reviewers = process.env.CODE_REVIEWERS;
                               
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
             core.setOutput('topdirs', topdirs || '(none)');
-            core.setOutput('reviewers', '@be' || 'n/a');
+            core.setOutput('reviewers', reviewers || 'n/a');
 
       - name: Build Slack blocks + evaluate scope + detect DB change
         id: blocks
