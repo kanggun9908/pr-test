@@ -99,11 +99,13 @@ jobs:
 
             // TODO: 핵심 디렉터리 경로 조정 필요 시 변경
             const touchDirs = [
-              'src/*'
+              'src/',
+              '*.sql',
+              '.github/workflows/',
+              'Dockerfile' 
             ]
 
             console.log(filenames);
-
 
             const TOUCH_CORE = filenames.some(fn => {
               return touchDirs.some(pattern => {
