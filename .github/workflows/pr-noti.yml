@@ -207,6 +207,15 @@ jobs:
 
             const blocks = [header, prInfo, contextBlock, divider, mainContent];
 
+            blocks.push(divider);
+            blocks.push({
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "👉 *이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.*"
+              }
+            });
+
             core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
@@ -413,8 +422,7 @@ jobs:
             - [ ] 예외 처리, 성능, 보안, 로그 레벨 점검
             - [ ] 문서/README/워크플로우 변경 사항 확인
             - [ ] 불필요한 파일/설정 변경, 대용량 diff 검토
-            👉 **이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.**
-            `;
+
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
             });
