@@ -323,7 +323,7 @@ jobs:
               });
             }
 
-            existingBlocks.push(divider);
+            existingBlocks.push({ type: "divider" });
             existingBlocks.push({
               "type": "section",
               "text": {
