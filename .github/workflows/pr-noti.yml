@@ -31,7 +31,6 @@ jobs:
       dbChanged: ${{ steps.blocks.outputs.dbChanged }}
       dbDirs: ${{ steps.blocks.outputs.dbDirs }}
       blocks: ${{ steps.blocks.outputs.blocks }}
-      mentions: ${{ steps.mentions.outputs.mentions }}
     steps:
       - name: Gather PR file stats
         id: gather
@@ -215,13 +214,6 @@ jobs:
             core.setOutput('dbChanged', String(dbChanged));
             core.setOutput('dbDirs', JSON.stringify(dbDirs));
 
-      - name: Prepare mentions (3 specific Slack users)
-        id: mentions
-        shell: bash
-        run: |
-          MENTIONS="${{ vars.CODE_OWNERS_VAR }}"
-          echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
-
   send-coderabbit-summary:
     name: "Wait for CodeRabbit and Find Summary"
     runs-on: ubuntu-latest
@@ -279,21 +271,12 @@ jobs:
         env:
           BLOCKS: ${{ needs.analyze.outputs.blocks }}
           SUMMARY: ${{ needs.send-coderabbit-summary.outputs.summary }}
-          MENTIONS: ${{ needs.analyze.outputs.mentions }}
           SEVERITY: ${{ needs.analyze.outputs.severity }}
         with:
           script: |
             let existingBlocks = JSON.parse(process.env.BLOCKS);
             const codeRabbitSummary = process.env.SUMMARY;
-            const mentions = process.env.MENTIONS;
             const severity = process.env.SEVERITY;
-
-            if (mentions) {
-              existingBlocks.splice(1, 0, {
-                "type": "context",
-                "elements": [{ "type": "mrkdwn", "text": `*담당자:* ${mentions}` }]
-              });
-            }
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               const lines = codeRabbitSummary
@@ -417,6 +400,8 @@ jobs:
             - 변경 파일: ${files}개
             - 라인 변화: +${adds} / -${dels}
             ${dbLine}
+
+            // TODO: 체크리스트 변경 필요 시 항목 수정
             **리뷰 체크리스트 (가이드)**
             - [ ] 핵심 비즈니스 로직 및 기능 변경 사항 검토
             - [ ] DB/마이그레이션 영향 점검 (롤백 가능성 포함)
