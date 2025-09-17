@@ -260,17 +260,10 @@ jobs:
                 .filter(l => l.length > 0);     // 빈 줄 제거
               console.log(lines);
 
-              let formattedLines = ['🤖 CodeRabbit AI 요약\n'];
-
-              lines.forEach(line => {
-                if (line.startsWith('- ')) {
-                  const content = line.slice(2).trim();
-                  formattedLines.push(content);
-                } else if (line.startsWith('  -')) {
-                  const content = line.slice(3).trim();
-                  formattedLines.push('  - ' + content);
-                }
-              });
+              const formattedLines = [
+                '🤖 CodeRabbit AI 요약\n',
+                ...lines.map(line => line) // 단순 추가
+              ];
 
               const cleanedSummary = formattedLines.join('\n');
 
