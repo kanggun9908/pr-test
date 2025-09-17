@@ -207,15 +207,6 @@ jobs:
 
             const blocks = [header, prInfo, contextBlock, divider, mainContent];
 
-            blocks.push(divider);
-            blocks.push({
-              "type": "section",
-              "text": {
-                "type": "mrkdwn",
-                "text": "👉 *이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.*"
-              }
-            });
-
             core.setOutput('blocks', JSON.stringify(blocks));
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
@@ -332,6 +323,15 @@ jobs:
               });
             }
 
+            existingBlocks.push(divider);
+            existingBlocks.push({
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "👉 *이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.*"
+              }
+            });
+
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput(
               'final_text_fallback',
@@ -401,6 +401,8 @@ jobs:
             const dels = process.env.dels;
             const reasons = process.env.reasons;
             const dbChanged = process.env.dbChanged === 'true';
+            const dbDirs = JSON.parse(process.env.dbDirs || '[]');
+
             const dbLine = dbChanged
               ? `\n> ⚠️ \`${dbDirs.join('`, `')}\` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n`
               : '';
