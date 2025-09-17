@@ -223,7 +223,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 10
+        run: sleep 180
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
@@ -249,7 +249,7 @@ jobs:
               if (summaryContent) {
                 if (summaryContent.includes(endMarker)) {
                   summaryContent = summaryContent.split(endMarker)[0];
-                  }
+                }
                 core.setOutput('summary', summaryContent);  
               } else {
                 core.setOutput('summary', '');
@@ -284,11 +284,10 @@ jobs:
                 .split('\n')
                 .map(l => l.trimEnd())           // 오른쪽 공백 제거
                 .filter(l => l.length > 0);     // 빈 줄 제거
-              console.log(lines);
 
               const formattedLines = [
                 '🤖 CodeRabbit AI 요약\n',
-                ...lines.map(line => line) // 단순 추가
+                ...lines
               ];
 
               const cleanedSummary = formattedLines.join('\n');
@@ -340,7 +339,9 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
-    if: always()
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
@@ -386,10 +387,10 @@ jobs:
             const reasons = process.env.reasons;
             const dbChanged = process.env.dbChanged === 'true';
             const dbDirs = JSON.parse(process.env.dbDirs || '[]');
-
             const dbLine = dbChanged
               ? `\n> ⚠️ \`${dbDirs.join('`, `')}\` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n`
               : '';
+
             const body = `
             ${MARKER}
             ### 📌 PR 변경 사항 검토 안내
@@ -410,7 +411,6 @@ jobs:
             - [ ] 문서/README/워크플로우 변경 사항 확인
             - [ ] 불필요한 파일/설정 변경, 대용량 diff 검토
             `;
-
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
             });
