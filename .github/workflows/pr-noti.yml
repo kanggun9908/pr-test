@@ -90,7 +90,7 @@ jobs:
             }
             const filenames = allFiles.map(f=>f.filename);
 
-            // sevirity 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
+            // 심각도 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
             // TODO: 파일 수 기준 조정 필요 시 변경
             const BIG_FILES = files > 25;
 
@@ -98,6 +98,15 @@ jobs:
             const BIG_LINES = additions > 800;
 
             // TODO: 핵심 디렉터리 경로 조정 필요 시 변경
+            // 각 항목의 규칙 및 예시:
+            // 1) 끝이 '/' : 해당 디렉토리 바로 아래 1단계 하위 파일만 체크
+            //    예) 'src/' → src/a.js 포함, src/subdir/b.js 제외
+            // 2) 끝이 '/*' : 해당 디렉토리 하위 전체 파일 체크 (재귀 포함)
+            //    예) 'src/*' → src/a.js, src/subdir/b.js 모두 포함
+            // 3) '*접미사' : 파일명 끝부분과 비교
+            //    예) '*.sql' → migration.sql, init.sql 포함
+            // 4) 그 외 문자열 : 파일명 포함 여부 체크
+            //    예) 'Dockerfile' → 루트에 Dockerfile 파일만 포함
             const touchDirs = [
               'src/',
               '*.sql',
