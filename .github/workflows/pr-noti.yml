@@ -29,6 +29,7 @@ jobs:
       topdirs: ${{ steps.gather.outputs.topdirs }}
       reviewers: ${{ steps.gather.outputs.reviewers }}
       dbChanged: ${{ steps.blocks.outputs.dbChanged }}
+      dbDirs: ${{ steps.blocks.outputs.dbDirs }}
       blocks: ${{ steps.blocks.outputs.blocks }}
       mentions: ${{ steps.mentions.outputs.mentions }}
     steps:
