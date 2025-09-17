@@ -11,7 +11,9 @@ on:
 
 jobs:
   analyze:
-    if: github.base_ref == 'dev' || ((github.base_ref == 'release' || github.base_ref == 'main') && startsWith((github.head_ref), 'hotfix/'))
+    # TODO: 워크플로우 작동 조건 조정 필요 혹은 브랜치명이 다를 경우 변경
+    # 현재는 dev 브랜치로 머지 하려는 경우 또는 release/main 브랜치로 hotfix 브랜치를 머지 시에만 작동
+    if: github.base_ref == 'dev' || ((github.base_ref == 'release' || github.base_ref == 'main') && startsWith(github.head_ref, 'hotfix/'))
     name: Analyze PR scope
     runs-on: ubuntu-latest
     permissions:
@@ -32,6 +34,8 @@ jobs:
     steps:
       - name: Gather PR file stats
         id: gather
+        env:
+          CODE_REVIEWERS: ${{ vars.CODE_REVIEWERS }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -54,7 +58,9 @@ jobs:
               }, {})
             ).sort((a,b)=>b[1]-a[1]).slice(0,5)
              .map(([d,c])=>`${d}(${c})`).join(', ');
-            const reviewers = process.env.MENTIONS;
+
+            const reviewers = process.env.CODE_REVIEWERS;
+                              
             core.setOutput('files', String(files.length));
             core.setOutput('additions', String(additions));
             core.setOutput('deletions', String(deletions));
@@ -83,12 +89,63 @@ jobs:
               page++;
             }
             const filenames = allFiles.map(f=>f.filename);
+
+            // sevirity 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
+            // TODO: 파일 수 기준 조정 필요 시 변경
             const BIG_FILES = files > 25;
+
+            // TODO: 라인 수 기준 조정 필요 시 변경
             const BIG_LINES = additions > 800;
-            const TOUCH_CORE = filenames.some(fn =>
-              (fn.startsWith('src/') && !fn.substring(4).includes('/')) || fn.toLowerCase().endsWith('.sql') ||
-              fn.includes('Dockerfile') || fn.startsWith('.github/workflows')
-            );
+
+            // TODO: 핵심 디렉터리 경로 조정 필요 시 변경
+            const touchDirs = [
+              'src/*'
+            ]
+
+            console.log(filenames);
+
+
+            const TOUCH_CORE = filenames.some(fn => {
+              return touchDirs.some(pattern => {
+                // 하위 전체 패턴 (끝이 '/*')
+                if (pattern.length >= 2 && pattern.endsWith('/*')) {
+                  const base = pattern.substring(0, pattern.length - 2);
+                  const result = fn.startsWith(base + '/');
+                  console.log(fn, pattern, '하위 전체 /*', result);
+                  return result;
+                }
+
+                // 바로 아래 1단계 패턴 (끝이 '/')
+                if (pattern.length >= 1 && pattern.endsWith('/')) {
+                  const base = pattern.substring(0, pattern.length - 1);
+                  if (fn.startsWith(base + '/')) {
+                    const rest = fn.substring(base.length + 1);
+                    const result = rest.indexOf('/') === -1;
+                    console.log(fn, pattern, '바로 아래 1단계 /', result);
+                    return result;
+                  }
+                  console.log(fn, pattern, '바로 아래 1단계 /', false);
+                  return false;
+                }
+
+                // 접미사 패턴 (*.sql)
+                if (pattern.length >= 1 && pattern[0] === '*') {
+                  const result = fn.toLowerCase().endsWith(pattern.substring(1));
+                  console.log(fn, pattern, '접미사 *.sql', result);
+                  return result;
+                }
+
+                // 단순 포함
+                const result = fn.includes(pattern);
+                console.log(fn, pattern, '단순 포함', result);
+                return result;
+              });
+            });
+
+            console.log('TOUCH_CORE 최종:', TOUCH_CORE);
+
+
+
             const HAS_LABEL = (pr.labels || []).some(l => ['needs-review','risk:high','breaking'].includes(l.name));
             const isLarge = BIG_FILES || BIG_LINES || TOUCH_CORE || HAS_LABEL;
             let severity='LOW', score=0;
@@ -108,7 +165,7 @@ jobs:
               HAS_LABEL ? `주요 라벨 포함` : null,
             ].filter(Boolean).join(', ');
 
-            const severityEmoji = { HIGH: '🚨', MEDIUM: '⚠️', LOW: '⚪️' }[severity];
+            const severityEmoji = { HIGH: '🔴', MEDIUM: '🟡', LOW: '🟢' }[severity];
 
             const header = {
               "type": "header",
@@ -132,7 +189,7 @@ jobs:
               "elements": [
                 {
                   "type": "mrkdwn",
-                  "text": `${severityEmoji} 범위판단: *${severity}* |  사유: ${reasons || 'n/a'}`
+                  "text": `${severityEmoji} 범위판단: *${severity}*\n사유: ${reasons || 'n/a'}`
                 }
               ]
             };
@@ -175,42 +232,40 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 120 # 대기 시간은 그대로 둡니다.
+        run: sleep 10
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
         uses: actions/github-script@v7
         with:
-          # [수정된 부분] 최신 코멘트부터 찾도록 로직을 수정했습니다.
           script: |
             const prNumber = context.issue.number;
             const { owner, repo } = context.repo;
-            const botUser = 'coderabbitai[bot]';
-            const summaryIdentifier = 'Summary by CodeRabbit';
+            const summaryIdentifier = '## Summary by CodeRabbit';
 
-            // 모든 코멘트를 가져옵니다.
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: prNumber,
+            const { data: latestPr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
             });
 
-            // [핵심] 코멘트 배열을 뒤집어 최신순으로 정렬합니다.
-            const codeRabbitComment = comments.reverse().find(comment =>
-              comment.user.login === botUser && comment.body.includes(summaryIdentifier)
-            );
+            const prBody = latestPr.body ?? '';
+            const endMarker = '<!--';
 
-            if (codeRabbitComment) {
-              console.log('Found the latest CodeRabbit summary comment!');
-              const summaryBody = codeRabbitComment.body.split(summaryIdentifier)[1]?.trim();
-              
-              if (summaryBody) {
-                core.setOutput('summary', summaryBody);
+            if (prBody.includes(summaryIdentifier)) {
+              let summaryContent = prBody.split(summaryIdentifier)[1]?.trim() ?? '';
+
+              if (summaryContent) {
+                if (summaryContent.includes(endMarker)) {
+                  summaryContent = summaryContent.split(endMarker)[0];
+                  }
+                core.setOutput('summary', summaryContent);  
               } else {
-                console.log('Identifier was found, but the summary content was empty.');
                 core.setOutput('summary', '');
               }
             } else {
-              console.log('CodeRabbit summary comment not found after waiting.');
-              core.setOutput('summary', '');
+              console.log('CodeRabbit summary not found in PR body');
+              core.setOutput('summary','');
             }
 
   notify-slack-detailed:
@@ -242,15 +297,39 @@ jobs:
             }
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
-              existingBlocks.push({ "type": "divider" });
+              const lines = codeRabbitSummary
+                .replace(/<!--[\s\S]*?-->/g, '') // 주석 제거
+                .split('\n')
+                .map(l => l.trimEnd())           // 오른쪽 공백 제거
+                .filter(l => l.length > 0);     // 빈 줄 제거
+              console.log(lines);
+
+              const formattedLines = [
+                '🤖 CodeRabbit AI 요약\n',
+                ...lines.map(line => line) // 단순 추가
+              ];
+
+              const cleanedSummary = formattedLines.join('\n');
+
+              existingBlocks.push({ type: "divider" });
               existingBlocks.push({
-                "type": "section",
-                "text": { "type": "mrkdwn", "text": `*🤖 CodeRabbit AI 요약*\n${codeRabbitSummary}` }
+                type: "rich_text",
+                elements: [
+                  {
+                    type: "rich_text_preformatted",
+                    elements: [
+                      { type: "text", text: cleanedSummary }
+                    ]
+                  }
+                ]
               });
             }
-            core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
-            core.setOutput('final_text_fallback', `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`);
 
+            core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
+            core.setOutput(
+              'final_text_fallback',
+              `PR #${context.issue.number} - ${context.payload.pull_request.title} (${severity})`
+            );
       - name: Post to Slack
         uses: slackapi/slack-github-action@v1.25.0
         env:
@@ -270,7 +349,9 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
-    if: always()
+    if: >
+      needs.analyze.outputs.severity == 'HIGH'
+      && github.event.pull_request.draft == false
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
