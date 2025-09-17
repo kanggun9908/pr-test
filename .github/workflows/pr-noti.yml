@@ -388,7 +388,7 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
-            const MARKER = '';
+            const MARKER = '<!-- large-pr-comment -->';
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr.number, per_page: 100
             });
