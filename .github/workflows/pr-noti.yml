@@ -106,6 +106,8 @@ jobs:
             // 'Dockerfile',
             // '*.sql'
 
+            console.log(filenames);
+
 
             const TOUCH_CORE = filenames.some(fn => {
               touchDirs.some(pattern => {
@@ -250,7 +252,7 @@ jobs:
               if (summaryContent) {
                 if (summaryContent.includes(endMarker)) {
                   summaryContent = summaryContent.split(endMarker)[0];
-                }
+                  }
                 core.setOutput('summary', summaryContent);  
               } else {
                 core.setOutput('summary', '');
