@@ -112,6 +112,7 @@ jobs:
               '*.sql',
               '.github/workflows/',
               'Dockerfile' 
+              'src/testApp/*'
             ]
               
             // TODO: 백엔드, 프론트엔드, 앱 등 각 영역에 맞게 특별히 주의 및 언급이 필요한 파일/디렉토리를 조정하세요.
