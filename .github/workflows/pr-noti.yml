@@ -28,9 +28,9 @@ jobs:
       deletions: ${{ steps.gather.outputs.deletions }}
       topdirs: ${{ steps.gather.outputs.topdirs }}
       reviewers: ${{ steps.gather.outputs.reviewers }}
-      dbChanged: ${{ steps.blocks.outputs.dbChanged }}
+      customCoreChanged: ${{ steps.blocks.outputs.customCoreChanged }}
+      customCoreDirs: ${{ steps.blocks.outputs.customCoreDirs }}
       blocks: ${{ steps.blocks.outputs.blocks }}
-      mentions: ${{ steps.mentions.outputs.mentions }}
     steps:
       - name: Gather PR file stats
         id: gather
@@ -67,7 +67,7 @@ jobs:
             core.setOutput('topdirs', topdirs || '(none)');
             core.setOutput('reviewers', reviewers || 'n/a');
 
-      - name: Build Slack blocks + evaluate scope + detect DB change
+      - name: Build Slack blocks + evaluate scope + detect CoreDirectory change
         id: blocks
         uses: actions/github-script@v7
         with:
@@ -90,7 +90,7 @@ jobs:
             }
             const filenames = allFiles.map(f=>f.filename);
 
-            // sevirity 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
+            // 심각도 판단 기준 설정 (파일수, 라인수, 디렉토리, 라벨 등)
             // TODO: 파일 수 기준 조정 필요 시 변경
             const BIG_FILES = files > 25;
 
@@ -98,14 +98,27 @@ jobs:
             const BIG_LINES = additions > 800;
 
             // TODO: 핵심 디렉터리 경로 조정 필요 시 변경
+            // 각 항목의 규칙 및 예시:
+            // 1) 끝이 '/' : 해당 디렉토리 바로 아래 1단계 하위 파일만 체크
+            //    예) 'src/' → src/a.js 포함, src/subdir/b.js 제외
+            // 2) 끝이 '/*' : 해당 디렉토리 하위 전체 파일 체크 (재귀 포함)
+            //    예) 'src/*' → src/a.js, src/subdir/b.js 모두 포함
+            // 3) '*접미사' : 파일명 끝부분과 비교
+            //    예) '*.sql' → migration.sql, init.sql 포함
+            // 4) 그 외 문자열 : 파일명 포함 여부 체크
+            //    예) 'Dockerfile' → 루트에 Dockerfile 파일만 포함
             const touchDirs = [
               'src/',
               '*.sql',
               '.github/workflows/',
               'Dockerfile' 
             ]
-
-            console.log(filenames);
+              
+            // TODO: 백엔드, 프론트엔드, 앱 등 각 영역에 맞게 특별히 주의 및 언급이 필요한 파일/디렉토리를 조정하세요.
+            const customCoreDirs = [
+              'package.json',
+              'src/router/'
+            ]
 
             const TOUCH_CORE = filenames.some(fn => {
               return touchDirs.some(pattern => {
@@ -113,7 +126,6 @@ jobs:
                 if (pattern.length >= 2 && pattern.endsWith('/*')) {
                   const base = pattern.substring(0, pattern.length - 2);
                   const result = fn.startsWith(base + '/');
-                  console.log(fn, pattern, '하위 전체 /*', result);
                   return result;
                 }
 
@@ -123,30 +135,22 @@ jobs:
                   if (fn.startsWith(base + '/')) {
                     const rest = fn.substring(base.length + 1);
                     const result = rest.indexOf('/') === -1;
-                    console.log(fn, pattern, '바로 아래 1단계 /', result);
                     return result;
                   }
-                  console.log(fn, pattern, '바로 아래 1단계 /', false);
                   return false;
                 }
 
                 // 접미사 패턴 (*.sql)
                 if (pattern.length >= 1 && pattern[0] === '*') {
                   const result = fn.toLowerCase().endsWith(pattern.substring(1));
-                  console.log(fn, pattern, '접미사 *.sql', result);
                   return result;
                 }
 
                 // 단순 포함
                 const result = fn.includes(pattern);
-                console.log(fn, pattern, '단순 포함', result);
                 return result;
               });
             });
-
-            console.log('TOUCH_CORE 최종:', TOUCH_CORE);
-
-
 
             const HAS_LABEL = (pr.labels || []).some(l => ['needs-review','risk:high','breaking'].includes(l.name));
             const isLarge = BIG_FILES || BIG_LINES || TOUCH_CORE || HAS_LABEL;
@@ -157,9 +161,9 @@ jobs:
             if (HAS_LABEL) score+=1;
             if (score >= 5) severity='HIGH';
             else if (score >= 3) severity='MEDIUM';
-            const DB_SQL = filenames.some(fn => fn.toLowerCase().endsWith('.sql'));
-            const DB_ENT = filenames.some(fn => fn.startsWith('src/entities/'));
-            const dbChanged = DB_SQL || DB_ENT;
+            const customCoreChanged = filenames.some(fn =>
+              customCoreDirs.some(dir => fn.toLowerCase().endsWith(dir) || fn.startsWith(dir))
+            );
             const reasons = [
               BIG_FILES ? `변경 파일 ${files}건` : null,
               BIG_LINES ? `추가 라인 ${additions} (삭제 ${deletions})` : null,
@@ -203,8 +207,8 @@ jobs:
               { "type": "mrkdwn", "text": `*요청 리뷰어*\n${reviewers || 'n/a'}` }
             ];
 
-            if (dbChanged) {
-              fields.push({ "type": "mrkdwn", "text": `*DB 변경*\n:warning: 감지됨` });
+            if (customCoreChanged) {
+              fields.push({ "type": "mrkdwn", "text": `*핵심 디렉터리 변경*\n:warning: 감지됨` });
             }
 
             const mainContent = { "type": "section", "fields": fields };
@@ -216,14 +220,8 @@ jobs:
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
-            core.setOutput('dbChanged', String(dbChanged));
-
-      - name: Prepare mentions (3 specific Slack users)
-        id: mentions
-        shell: bash
-        run: |
-          MENTIONS="${{ vars.CODE_OWNERS_VAR }}"
-          echo "mentions=${MENTIONS}" >> $GITHUB_OUTPUT
+            core.setOutput('customCoreChanged', String(customCoreChanged));
+            core.setOutput('customCoreDirs', JSON.stringify(customCoreDirs));
 
   send-coderabbit-summary:
     name: "Wait for CodeRabbit and Find Summary"
@@ -234,7 +232,7 @@ jobs:
       summary: ${{ steps.find_comment.outputs.summary }}
     steps:
       - name: "Wait for CodeRabbit review"
-        run: sleep 10
+        run: sleep 180
 
       - name: "Find CodeRabbit summary comment"
         id: find_comment
@@ -260,7 +258,7 @@ jobs:
               if (summaryContent) {
                 if (summaryContent.includes(endMarker)) {
                   summaryContent = summaryContent.split(endMarker)[0];
-                  }
+                }
                 core.setOutput('summary', summaryContent);  
               } else {
                 core.setOutput('summary', '');
@@ -282,21 +280,12 @@ jobs:
         env:
           BLOCKS: ${{ needs.analyze.outputs.blocks }}
           SUMMARY: ${{ needs.send-coderabbit-summary.outputs.summary }}
-          MENTIONS: ${{ needs.analyze.outputs.mentions }}
           SEVERITY: ${{ needs.analyze.outputs.severity }}
         with:
           script: |
             let existingBlocks = JSON.parse(process.env.BLOCKS);
             const codeRabbitSummary = process.env.SUMMARY;
-            const mentions = process.env.MENTIONS;
             const severity = process.env.SEVERITY;
-
-            if (mentions) {
-              existingBlocks.splice(1, 0, {
-                "type": "context",
-                "elements": [{ "type": "mrkdwn", "text": `*담당자:* ${mentions}` }]
-              });
-            }
 
             if (codeRabbitSummary && codeRabbitSummary.length > 0) {
               const lines = codeRabbitSummary
@@ -304,11 +293,10 @@ jobs:
                 .split('\n')
                 .map(l => l.trimEnd())           // 오른쪽 공백 제거
                 .filter(l => l.length > 0);     // 빈 줄 제거
-              console.log(lines);
 
               const formattedLines = [
                 '🤖 CodeRabbit AI 요약\n',
-                ...lines.map(line => line) // 단순 추가
+                ...lines
               ];
 
               const cleanedSummary = formattedLines.join('\n');
@@ -326,6 +314,15 @@ jobs:
                 ]
               });
             }
+
+            existingBlocks.push({ type: "divider" });
+            existingBlocks.push({
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "👉 *이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.*"
+              }
+            });
 
             core.setOutput('final_blocks_json', JSON.stringify(existingBlocks));
             core.setOutput(
@@ -351,9 +348,7 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
-    if: >
-      needs.analyze.outputs.severity == 'HIGH'
-      && github.event.pull_request.draft == false
+    if: always()
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
@@ -379,12 +374,13 @@ jobs:
           adds: ${{ needs.analyze.outputs.additions }}
           dels: ${{ needs.analyze.outputs.deletions }}
           reasons: ${{ needs.analyze.outputs.reasons }}
-          dbChanged: ${{ needs.analyze.outputs.dbChanged }}
+          customCoreChanged: ${{ needs.analyze.outputs.customCoreChanged }}
+          customCoreDirs: ${{ needs.analyze.outputs.customCoreDirs }}
         with:
           script: |
             const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
-            const MARKER = '';
+            const MARKER = '<!-- large-pr-comment -->';
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr.number, per_page: 100
             });
@@ -396,10 +392,12 @@ jobs:
             const adds = process.env.adds;
             const dels = process.env.dels;
             const reasons = process.env.reasons;
-            const dbChanged = process.env.dbChanged === 'true';
-            const dbLine = dbChanged
-              ? '\n> ⚠️ `sql` 또는 `src/entities/` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n'
+            const customCoreChanged = process.env.customCoreChanged === 'true';
+            const customCoreDirs = JSON.parse(process.env.customCoreDirs || '[]');
+            const customCoreLine = customCoreChanged
+              ? `\n> ⚠️ \`${customCoreDirs.join('`, `')}\` 변경 감지: **핵심 디렉터리 변경점**이 있을 수 있어요.\n`
               : '';
+
             const body = `
             ${MARKER}
             ### 📌 PR 변경 사항 검토 안내
@@ -409,8 +407,9 @@ jobs:
             **변경 요약**
             - 변경 파일: ${files}개
             - 라인 변화: +${adds} / -${dels}
-            - 링크: ${pr.html_url}
-            ${dbLine}
+            ${customCoreLine}
+
+            // TODO: 체크리스트 변경 필요 시 항목 수정
             **리뷰 체크리스트 (가이드)**
             - [ ] 핵심 비즈니스 로직 및 기능 변경 사항 검토
             - [ ] DB/마이그레이션 영향 점검 (롤백 가능성 포함)
@@ -418,7 +417,6 @@ jobs:
             - [ ] 예외 처리, 성능, 보안, 로그 레벨 점검
             - [ ] 문서/README/워크플로우 변경 사항 확인
             - [ ] 불필요한 파일/설정 변경, 대용량 diff 검토
-            👉 **이 코멘트에 이모지(예: 👀, ✅)를 달아주시면 우선순위로 리뷰를 시작합니다.**
             `;
             await github.rest.issues.createComment({
               owner, repo, issue_number: pr.number, body
