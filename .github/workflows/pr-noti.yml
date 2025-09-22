@@ -28,8 +28,8 @@ jobs:
       deletions: ${{ steps.gather.outputs.deletions }}
       topdirs: ${{ steps.gather.outputs.topdirs }}
       reviewers: ${{ steps.gather.outputs.reviewers }}
-      dbChanged: ${{ steps.blocks.outputs.dbChanged }}
-      dbDirs: ${{ steps.blocks.outputs.dbDirs }}
+      customCoreChanged: ${{ steps.blocks.outputs.customCoreChanged }}
+      customCoreDirs: ${{ steps.blocks.outputs.customCoreDirs }}
       blocks: ${{ steps.blocks.outputs.blocks }}
     steps:
       - name: Gather PR file stats
@@ -113,11 +113,11 @@ jobs:
               '.github/workflows/',
               'Dockerfile' 
             ]
-
-            // TODO: DB 관련 디렉터리 경로 조정 필요 시 변경
-            const dbDirs = [
-              '.sql',
-              'src/entities/'
+              
+            // TODO: 백엔드, 프론트엔드, 앱 등 각 영역에 맞게 특별히 주의 및 언급이 필요한 파일/디렉토리를 조정하세요.
+            const customCoreDirs = [
+              'package.json',
+              'src/router/'
             ]
 
             const TOUCH_CORE = filenames.some(fn => {
@@ -161,8 +161,8 @@ jobs:
             if (HAS_LABEL) score+=1;
             if (score >= 5) severity='HIGH';
             else if (score >= 3) severity='MEDIUM';
-            const dbChanged = filenames.some(fn =>
-              dbDirs.some(dir => fn.toLowerCase().endsWith(dir) || fn.startsWith(dir))
+            const customCoreChanged = filenames.some(fn =>
+              customCoreChanged.some(dir => fn.toLowerCase().endsWith(dir) || fn.startsWith(dir))
             );
             const reasons = [
               BIG_FILES ? `변경 파일 ${files}건` : null,
@@ -207,8 +207,8 @@ jobs:
               { "type": "mrkdwn", "text": `*요청 리뷰어*\n${reviewers || 'n/a'}` }
             ];
 
-            if (dbChanged) {
-              fields.push({ "type": "mrkdwn", "text": `*DB 변경*\n:warning: 감지됨` });
+            if (customCoreChanged) {
+              fields.push({ "type": "mrkdwn", "text": `*핵심 디렉터리 변경*\n:warning: 감지됨` });
             }
 
             const mainContent = { "type": "section", "fields": fields };
@@ -220,8 +220,8 @@ jobs:
             core.setOutput('isLarge', String(isLarge));
             core.setOutput('severity', severity);
             core.setOutput('reasons', reasons || 'n/a');
-            core.setOutput('dbChanged', String(dbChanged));
-            core.setOutput('dbDirs', JSON.stringify(dbDirs));
+            core.setOutput('customCoreChanged', String(customCoreChanged));
+            core.setOutput('customCoreDirs', JSON.stringify(customCoreDirs));
 
   send-coderabbit-summary:
     name: "Wait for CodeRabbit and Find Summary"
@@ -348,9 +348,7 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
-    if: >
-      needs.analyze.outputs.severity == 'HIGH'
-      && github.event.pull_request.draft == false
+    if: always()
     steps:
       - name: Ensure label "needs-review" exists on PR
         uses: actions/github-script@v7
@@ -376,8 +374,8 @@ jobs:
           adds: ${{ needs.analyze.outputs.additions }}
           dels: ${{ needs.analyze.outputs.deletions }}
           reasons: ${{ needs.analyze.outputs.reasons }}
-          dbChanged: ${{ needs.analyze.outputs.dbChanged }}
-          dbDirs: ${{ needs.analyze.outputs.dbDirs }}
+          customCoreChanged: ${{ needs.analyze.outputs.customCoreChanged }}
+          customCoreDirs: ${{ needs.analyze.outputs.customCoreDirs }}
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -394,10 +392,10 @@ jobs:
             const adds = process.env.adds;
             const dels = process.env.dels;
             const reasons = process.env.reasons;
-            const dbChanged = process.env.dbChanged === 'true';
-            const dbDirs = JSON.parse(process.env.dbDirs || '[]');
-            const dbLine = dbChanged
-              ? `\n> ⚠️ \`${dbDirs.join('`, `')}\` 변경 감지: **데이터베이스 변경점**이 있을 수 있어요.\n`
+            const customCoreChanged = process.env.customCoreChanged === 'true';
+            const customCoreDirs = JSON.parse(process.env.customCoreDirs || '[]');
+            const customCoreLine = customCoreChanged
+              ? `\n> ⚠️ \`${customCoreDirs.join('`, `')}\` 변경 감지: **핵심 디렉터리 변경점**이 있을 수 있어요.\n`
               : '';
 
             const body = `
@@ -409,7 +407,7 @@ jobs:
             **변경 요약**
             - 변경 파일: ${files}개
             - 라인 변화: +${adds} / -${dels}
-            ${dbLine}
+            ${customCoreLine}
 
             // TODO: 체크리스트 변경 필요 시 항목 수정
             **리뷰 체크리스트 (가이드)**
