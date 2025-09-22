@@ -67,7 +67,7 @@ jobs:
             core.setOutput('topdirs', topdirs || '(none)');
             core.setOutput('reviewers', reviewers || 'n/a');
 
-      - name: Build Slack blocks + evaluate scope + detect DB change
+      - name: Build Slack blocks + evaluate scope + detect CoreDirectory change
         id: blocks
         uses: actions/github-script@v7
         with:
@@ -162,7 +162,7 @@ jobs:
             if (score >= 5) severity='HIGH';
             else if (score >= 3) severity='MEDIUM';
             const customCoreChanged = filenames.some(fn =>
-              customCoreChanged.some(dir => fn.toLowerCase().endsWith(dir) || fn.startsWith(dir))
+              customCoreDirs.some(dir => fn.toLowerCase().endsWith(dir) || fn.startsWith(dir))
             );
             const reasons = [
               BIG_FILES ? `변경 파일 ${files}건` : null,
