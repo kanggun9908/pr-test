@@ -212,6 +212,8 @@ jobs:
               fields.push({ "type": "mrkdwn", "text": `*핵심 디렉터리 변경*\n:warning: 감지됨` });
             }
 
+            console.log(customCoreChanged)
+
             const mainContent = { "type": "section", "fields": fields };
             const divider = { "type": "divider" };
 
@@ -393,7 +395,7 @@ jobs:
             const adds = process.env.adds;
             const dels = process.env.dels;
             const reasons = process.env.reasons;
-            const customCoreChanged = process.env.customCoreChanged === true;
+            const customCoreChanged = process.env.customCoreChanged === 'true';
             const customCoreDirs = JSON.parse(process.env.customCoreDirs || '[]');
             const customCoreLine = customCoreChanged
               ? `\n> ⚠️ \`${customCoreDirs.join('`, `')}\` 변경 감지: **핵심 디렉터리 변경점**이 있을 수 있어요.\n`
